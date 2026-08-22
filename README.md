@@ -2,6 +2,8 @@
 
 > **Generic agent-to-agent communication protocol + OpenClaw plugin**
 > Version: 0.1.0  |  Ship date: 2026-08-22  |  License: MIT
+>
+> [中文版](README.zh.md) · [Live docs](https://hulker309.github.io/peer-contract-v0.1/) · [GitHub repo](https://github.com/Hulker309/peer-contract-v0.1)
 
 Universal protocol for dispatching work between agents. Five JSON Schemas define the wire format; a zero-dep Node.js CLI validates envelopes; an OpenClaw plugin enforces hard rules (HR1–HR9) at runtime.
 
@@ -28,6 +30,36 @@ This protocol fixes all three with:
 - 8 fix iterations across Day 5 (spec + CLI) and Day 6 (plugin install + Issues 1/2/3 + #8 correlation_id)
 
 See [`docs/architecture.md`](docs/architecture.md) for design rationale and [`docs/known-limitations.md`](docs/known-limitations.md) for what was deferred.
+
+## End-to-end dispatch sequence
+
+The core: how a dispatch flows from the dispatcher, through OpenClaw, into the plugin's enforce path, and lands in the audit log. This is what HR1/5/6 actually enforce at runtime.
+
+```mermaid
+sequenceDiagram
+    participant A as Agent A
+    participant O as OpenClaw 18789
+    participant P as peer-contract-enforcer
+    participant L as Cross-agent audit log
+    A->>O: sessions_send(target=..., payload=v0.1)
+    O->>P: before_tool_call(event)
+    Note over P: HR1 intent-aware<br/>+ cross-agent-to-work block
+    P->>P: HR6 schema + session-existence
+    P->>P: CONTRACT Drift 1-6
+    P->>P: HR2/HR3/HR7/HR8/HR9
+    alt allow
+        P-->>O: undefined (allow)
+        O->>A: deliver message
+        A->>O: response (message_sending)
+        O->>P: message_sending hook
+        P->>L: append cross_session_message (with correlationId)
+    else block
+        P-->>O: { block: true, blockReason }
+        O-->>A: BLOCK with reason
+    end
+```
+
+Note: the 8/19 strategic reference was a hand-drawn sequence diagram of this exact shape (Agent A's main/S:A1/S:A2 × Agent B's main/S:B1/S:B2). The plugin inserts an enforce step at every cross-agent boundary.
 
 ## Quick start
 
