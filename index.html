@@ -408,6 +408,31 @@ graph TB
       </pre>
     </div>
 
+    <h2>Cross-agent dialogue and bus/work separation</h2>
+    <p>Each agent has a public <code>bus</code> boundary and a private <code>work</code> sub-session. The protocol enforces two layouts: cross-agent dispatch goes bus↔bus (ALLOW), and any cross-agent direct-to-work is BLOCKED by HR1.</p>
+    <div class="diagram">
+      <div class="diagram-title">Two-agent dispatch with bus↔work session model</div>
+      <pre class="mermaid">
+sequenceDiagram
+    participant Ab as A.bus
+    participant Aw as A.work
+    participant Bb as B.bus
+    participant Bw as B.work
+
+    Note over Ab,Bw: Phase 1 — cross-agent dispatch goes bus↔bus (HR1 ALLOW)
+    Ab->>Bb: dispatch (target=B.bus, payload=v0.1)
+    Bb->>Bw: intra-agent sub-session spawn
+    Bw->>Bw: execute task
+    Bw-->>Bb: yield_report
+    Bb-->>Ab: return result
+
+    Note over Ab,Bw: Phase 2 — cross-agent direct-to-work is anti-pattern (HR1 BLOCK)
+    Ab-->>Bw: ✗ dispatch to B.work (cross-agent-to-work)
+    Aw-->>Bb: ✗ dispatch to B.bus from A.work (cross-agent-to-work)
+    Aw-->>Bw: ✗ dispatch to B.work from A.work (cross-agent-to-work)
+      </pre>
+    </div>
+
     <h2>Repo layout</h2>
     <div class="layout">
       <div class="layout-card">
@@ -462,8 +487,8 @@ graph TB
       <li><strong>One-shot</strong>: v0.1 is a one-shot protocol layer. No v0.2 (user explicit 9/22 9:48).</li>
       <li><strong>Enforce mode</strong>: <code>dryRun: false</code> (user 6/22 06:09). No shadow mode shipped.</li>
       <li><strong>Strategic scope = agent↔agent</strong>: HR1/5/6 enforced at runtime. HR2/3/9 dormant (B方案 user拍板 7/14).</li>
-      <li><strong>Cross-agent-to-work blocked</strong>: Kelsen.bus → coder.work is anti-pattern (user architectural critique 9/22 9:21).</li>
-      <li><strong>v1.1 compat dropped</strong>: Coder must migrate to v0.1 format (user 6/14).</li>
+      <li><strong>Cross-agent-to-work blocked</strong>: agent-A.bus → agent-B.work is anti-pattern (user architectural critique 9/22 9:21).</li>
+      <li><strong>v1.1 wire format dropped</strong>: Producers must emit v0.1 format (user 6/14).</li>
     </ul>
 
     <h2>Quick start</h2>

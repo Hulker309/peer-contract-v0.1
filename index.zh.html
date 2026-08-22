@@ -399,6 +399,31 @@ graph TB
       </pre>
     </div>
 
+    <h2>跨 agent 对话和 bus/work 分离</h2>
+    <p>每个 agent 有一个 public <code>bus</code> 边界 + 一个 private <code>work</code> sub-session。协议 enforce 两种 layout：跨 agent dispatch 走 bus↔bus（ALLOW），任何跨 agent 直接到 work 被 HR1 BLOCK。</p>
+    <div class="diagram">
+      <div class="diagram-title">两个 agent 之间的 dispatch：bus↔work session 模型</div>
+      <pre class="mermaid">
+sequenceDiagram
+    participant Ab as A.bus
+    participant Aw as A.work
+    participant Bb as B.bus
+    participant Bw as B.work
+
+    Note over Ab,Bw: Phase 1 — 跨 agent dispatch 走 bus↔bus（HR1 ALLOW）
+    Ab->>Bb: dispatch (target=B.bus, payload=v0.1)
+    Bb->>Bw: intra-agent sub-session spawn
+    Bw->>Bw: 执行任务
+    Bw-->>Bb: yield_report
+    Bb-->>Ab: 返回结果
+
+    Note over Ab,Bw: Phase 2 — 跨 agent 直接到 work 是 anti-pattern（HR1 BLOCK）
+    Ab-->>Bw: ✗ dispatch 到 B.work（跨 agent 到 work）
+    Aw-->>Bb: ✗ 从 A.work dispatch 到 B.bus（跨 agent 到 work）
+    Aw-->>Bw: ✗ 从 A.work dispatch 到 B.work（跨 agent 到 work）
+      </pre>
+    </div>
+
     <h2>仓库结构</h2>
     <div class="layout">
       <div class="layout-card">
@@ -453,8 +478,8 @@ graph TB
       <li><strong>一次成型</strong>：v0.1 是单次协议层。无 v0.2（用户 9/22 9:48 明确拍板）。</li>
       <li><strong>Enforce 模式</strong>：<code>dryRun: false</code>（用户 6/22 06:09）。无 shadow mode。</li>
       <li><strong>战略范围 = agent↔agent</strong>：运行时 enforce HR1/5/6。HR2/3/9 dormant（B 方案用户 7/14 拍板）。</li>
-      <li><strong>跨 agent 到 work block</strong>：Kelsen.bus → coder.work 是 anti-pattern（用户 9/22 9:21 architectural critique）。</li>
-      <li><strong>v1.1 compat drop</strong>：Coder 必须迁到 v0.1 格式（用户 6/14）。</li>
+      <li><strong>跨 agent 到 work block</strong>：agent-A.bus → agent-B.work 是 anti-pattern（用户 9/22 9:21 architectural critique）。</li>
+      <li><strong>v1.1 wire format drop</strong>：Producer 必须发 v0.1 格式（用户 6/14）。</li>
     </ul>
 
     <h2>快速上手</h2>

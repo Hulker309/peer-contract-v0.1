@@ -4,7 +4,7 @@
   "private": true,
   "description": "Generic agent-to-agent communication protocol + OpenClaw plugin (peer-contract v0.1)",
   "license": "MIT",
-  "author": "Hulker309 (boss), Mavis (peer agent), Kelsen (validation)",
+  "author": "peer-contract v0.1 contributors",
   "scripts": {
     "test:cli": "node impl/cli/bin/peer-contract.js --version",
     "test:cli:smoke": "node impl/cli/bin/peer-contract.js check impl/cli/tests/test-envelope-ok.json",

@@ -59,7 +59,32 @@ sequenceDiagram
     end
 ```
 
-注：8/19 战略参考图就是这种横向时序图（Agent A 的 main/S:A1/S:A2 × Agent B 的 main/S:B1/S:B2）。插件在每个 cross-agent boundary 插一段 enforce。
+## 跨 agent 对话和 bus/work 分离
+
+每个 agent 有一个 public `bus` 边界 + 一个 private `work` sub-session。协议 enforce 两种 layout：
+
+- **ALLOW**（Phase 1）— 跨 agent dispatch 走 bus↔bus；接收方 bus 可以自己 spawn work sub-session，work 通过 yield_report 返回自己的 bus。
+- **BLOCK**（Phase 2）— 任何跨 agent 直接到 work 都被 HR1 block（dispatcher 的 bus、dispatcher 的 work、work-to-work 全 block）。
+
+```mermaid
+sequenceDiagram
+    participant Ab as A.bus
+    participant Aw as A.work
+    participant Bb as B.bus
+    participant Bw as B.work
+
+    Note over Ab,Bw: Phase 1 — 跨 agent dispatch 走 bus↔bus（HR1 ALLOW）
+    Ab->>Bb: dispatch (target=B.bus, payload=v0.1)
+    Bb->>Bw: intra-agent sub-session spawn
+    Bw->>Bw: 执行任务
+    Bw-->>Bb: yield_report
+    Bb-->>Ab: 返回结果
+
+    Note over Ab,Bw: Phase 2 — 跨 agent 直接到 work 是 anti-pattern（HR1 BLOCK）
+    Ab-->>Bw: ✗ dispatch 到 B.work（跨 agent 到 work）
+    Aw-->>Bb: ✗ 从 A.work dispatch 到 B.bus（跨 agent 到 work）
+    Aw-->>Bw: ✗ 从 A.work dispatch 到 B.work（跨 agent 到 work）
+```
 
 ## 快速上手
 
@@ -153,8 +178,8 @@ peer-contract-v0.1/
 - **一次成型**：v0.1 是单次协议层。无 v0.2（用户 9/22 9:48 拍板）。
 - **Enforce 模式**：`dryRun: false`（用户 6/22 06:09）。无 shadow mode。
 - **战略范围 = agent↔agent**：runtime enforce HR1/5/6。HR2/3/9 dormant（B 方案 7/14 拍板）。
-- **跨 agent 到 work block**：Kelsen.bus → coder.work 是 anti-pattern（用户 9/22 9:21 architectural critique）。
-- **v1.1 compat drop**：Coder 必须迁到 v0.1 格式（用户 6/14）。
+- **跨 agent 到 work block**：agent-A.bus → agent-B.work 是 anti-pattern（用户 9/22 9:21 architectural critique）。
+- **v1.1 wire format drop**：Producer 必须发 v0.1 格式（用户 6/14）。
 
 ## 贡献
 
@@ -166,10 +191,10 @@ peer-contract-v0.1/
 
 ## 致谢
 
-- **战略意图**：Hulker309（老板）— 2026-08-18 战略方向，2026-08-19 "通用协议层模板"，2026-08-22 10:40 设计意图确认
-- **插件作者**：Mavis（MiniMax Code peer agent）— Day 5 spec + CLI，Day 6 插件 install，8 轮 fix
-- **端到端验证**：Kelsen（OpenClaw main CEO）— 4 轮 source + e2e review，抓到 4 个 dead-code / fallback / lifecycle bug（P0-1 / P0-2 / P1 / P0-3），没有 source review 就会 ship
-- **Trial week agents (8/19–8/22)**：Kelsen + Coder — 原始 5 轮 trial；他们的 session JSONL 保留在 `~/.openclaw/agents/coder/sessions/` 作为 audit trail
+- **战略意图**：项目 owner — 2026-08-18 战略方向，2026-08-19 "通用协议层模板"，2026-08-22 10:40 设计意图确认
+- **插件作者**：Mavis — Day 5 spec + CLI，Day 6 插件 install，8 轮 fix
+- **端到端验证**：OpenClaw main + coder sub-agents — 4 轮 source + e2e review，抓到 4 个 dead-code / fallback / lifecycle bug（P0-1 / P0-2 / P1 / P0-3），没有 source review 就会 ship
+- **Trial week agents (8/19–8/22)**：OpenClaw main + coder — 原始 5 轮 trial；他们的 session JSONL 保留在 `~/.openclaw/agents/coder/sessions/` 作为 audit trail
 
 ## 协议
 

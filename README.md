@@ -59,7 +59,32 @@ sequenceDiagram
     end
 ```
 
-Note: the 8/19 strategic reference was a hand-drawn sequence diagram of this exact shape (Agent A's main/S:A1/S:A2 × Agent B's main/S:B1/S:B2). The plugin inserts an enforce step at every cross-agent boundary.
+## Cross-agent dialogue and bus/work separation
+
+Each agent has a public `bus` boundary and a private `work` sub-session. The protocol enforces two layouts:
+
+- **ALLOW** (Phase 1) — cross-agent dispatch goes bus↔bus; the receiving bus may spawn its own work sub-session, and the work returns via yield_report to its bus.
+- **BLOCK** (Phase 2) — any cross-agent direct-to-work is blocked by HR1, whether from the dispatcher's bus, the dispatcher's work, or work-to-work.
+
+```mermaid
+sequenceDiagram
+    participant Ab as A.bus
+    participant Aw as A.work
+    participant Bb as B.bus
+    participant Bw as B.work
+
+    Note over Ab,Bw: Phase 1 — cross-agent dispatch goes bus↔bus (HR1 ALLOW)
+    Ab->>Bb: dispatch (target=B.bus, payload=v0.1)
+    Bb->>Bw: intra-agent sub-session spawn
+    Bw->>Bw: execute task
+    Bw-->>Bb: yield_report
+    Bb-->>Ab: return result
+
+    Note over Ab,Bw: Phase 2 — cross-agent direct-to-work is anti-pattern (HR1 BLOCK)
+    Ab-->>Bw: ✗ dispatch to B.work (cross-agent-to-work)
+    Aw-->>Bb: ✗ dispatch to B.bus from A.work (cross-agent-to-work)
+    Aw-->>Bw: ✗ dispatch to B.work from A.work (cross-agent-to-work)
+```
 
 ## Quick start
 
@@ -152,10 +177,10 @@ Patches welcome. Read [`docs/maintainability.md`](docs/maintainability.md) first
 
 ## Credits
 
-- **Strategic intent**: Hulker309 (boss) — 2026-08-18 strategic direction, 2026-08-19 "generic protocol layer template", 2026-08-22 10:40 design intent confirmation
-- **Plugin author**: Mavis (MiniMax Code peer agent) — Day 5 spec + CLI, Day 6 plugin install, 8 fix iterations
-- **End-to-end validation**: Kelsen (OpenClaw main CEO) — 4 rounds of source + e2e review caught 4 dead-code / fallback / lifecycle bugs (P0-1 / P0-2 / P1 / P0-3) that Mavis would have shipped without source review
-- **Trial week agents (8/19–8/22)**: Kelsen + Coder — original 5 trial rounds; their session JSONL preserved as audit trail in `~/.openclaw/agents/coder/sessions/`
+- **Strategic intent**: project owner — 2026-08-18 strategic direction, 2026-08-19 "generic protocol layer template", 2026-08-22 10:40 design intent confirmation
+- **Plugin author**: Mavis — Day 5 spec + CLI, Day 6 plugin install, 8 fix iterations
+- **End-to-end validation**: OpenClaw main + worker sub-agents — 4 rounds of source + e2e review caught 4 dead-code / fallback / lifecycle bugs (P0-1 / P0-2 / P1 / P0-3) that source review alone would have shipped
+- **Trial week agents (8/19–8/22)**: OpenClaw main + worker — original 5 trial rounds; their session JSONL preserved as audit trail in `~/.openclaw/agents/coder/sessions/`
 
 ## License
 
