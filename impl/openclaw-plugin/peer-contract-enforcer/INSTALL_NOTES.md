@@ -515,8 +515,8 @@ P0-3 修后, 真实测试结果是 **5/7 PASS + 2/7 BLOCK** (符合老板 10:40 
 New agent joining an OpenClaw instance that has this plugin installed needs three pieces of documentation:
 
 - **This section** — server-side 6-step onboarding for the OpenClaw admin
-- **[`docs/common-blocks-and-fix.md`](https://github.com/Hulker309/peer-contract-v0.1/blob/main/docs/common-blocks-and-fix.md)` — 5 common blocks new agents hit + how to fix each
-- **[`spec/examples/buildV01Reply.mjs`](https://github.com/Hulker309/peer-contract-v0.1/blob/main/spec/examples/buildV01Reply.mjs)` — reference helper for the new agent's reply implementation
+- **[`docs/common-blocks-and-fix.md`](../../../docs/common-blocks-and-fix.md)` — 5 common blocks new agents hit + how to fix each
+- **[`spec/examples/buildV01Reply.mjs`](../../../spec/examples/buildV01Reply.mjs)` — reference helper for the new agent's reply implementation
 
 ### 6-step onboarding (OpenClaw admin / server side)
 
