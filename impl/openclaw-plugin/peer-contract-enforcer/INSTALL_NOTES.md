@@ -449,7 +449,8 @@ Kelsen 反馈提到 "代码层面 fix 都到位, 但端到端测试暴露 runtim
 
 ## Day 6a+++ (2026-08-22 11:20) — P0-3 (HR2 dead code) fix (Kelsen 4th bug)
 
-Kelsen 11:15 feedback 抓到 4th bug: ole-registry.js:92-98 session_start handler 写 parentSessionKey: undefined, **覆盖了** subagent_spawned (line 59-65) 之前设的 parentSessionKey: event.sessionKey.
+Kelsen 11:15 feedback 抓到 4th bug: 
+ole-registry.js:92-98 session_start handler 写 parentSessionKey: undefined, **覆盖了** subagent_spawned (line 59-65) 之前设的 parentSessionKey: event.sessionKey.
 
 **根因**: OpenClaw 触发顺序: subagent_spawned → session_start → work session 实际工作. session_start 把 parentSessionKey 覆盖为 undefined, 导致 	ool-guard.js:198-202 HR2 parent check 的 callerInfo?.parentSessionKey && callerInfo.parentSessionKey !== targetSessionKey 短路, **HR2 永远不 fire**. 结果: work session 可以 send 给任何 bus (own parent / 跨 agent), 违反老板 10:40 设计原意 #2 ("Coder 内部 bus/work 分离能达就行").
 
@@ -508,3 +509,72 @@ P0-3 修后, 真实测试结果是 **5/7 PASS + 2/7 BLOCK** (符合老板 10:40 
 6. 有问题 → 修, 重启, 重测, 再写 report
 
 已写进 Mavis agent memory. P0-3 bug 抓出证明 source review 这一步不可省.
+
+## Day 7 (2026-08-23 01:48) — Adding new agents
+
+New agent joining an OpenClaw instance that has this plugin installed needs three pieces of documentation:
+
+- **This section** — server-side 6-step onboarding for the OpenClaw admin
+- **[`docs/common-blocks-and-fix.md`](../../../docs/common-blocks-and-fix.md)` — 5 common blocks new agents hit + how to fix each
+- **[`spec/examples/buildV01Reply.mjs`](../../../spec/examples/buildV01Reply.mjs)` — reference helper for the new agent's reply implementation
+
+### 6-step onboarding (OpenClaw admin / server side)
+
+1. **`openclaw.json` add agent entry** — both `agents.list[]` and `tools.agentToAgent.allow[]`. Without the latter, cross-agent dispatch to the new agent is blocked at OpenClaw runtime with `status="forbidden"`, before the plugin even sees it.
+
+   ```json
+   {
+     "agents": {
+       "list": [
+         { "id": "main", "name": "main", ... },
+         { "id": "coder", "name": "coder", ... },
+         {
+           "id": "new-agent",                              // ← new agent id
+           "name": "new-agent",
+           "workspace": "C:\\Users\\Administrator\\.openclaw\\agents\\new-agent",
+           "agentDir": "C:\\Users\\Administrator\\.openclaw\\agents\\new-agent\\agent",
+           "subagents": { "allowAgents": [] }
+         }
+       ]
+     },
+     "tools": {
+       "agentToAgent": {
+         "enabled": true,
+         "allow": ["main", "coder", "new-agent"]          // ← add new agent
+       }
+     }
+   }
+   ```
+
+2. **Create agent workspace** — `~/.openclaw/agents/<id>/sessions/` subdirectory. Without `sessions/`, `agent-registry.js bootstrapScan` `looksLikeAgentDir()` heuristic skips that directory and the agent never gets into the whitelist.
+
+3. **Restart gateway** to trigger plugin bootstrap (full restart, not hot-reload — see Day 6a note that hot-reload does not re-import plugin module).
+
+4. **Verify in agent-registry** — `plugins inspect peer-contract-enforcer --runtime` log contains `<id>`. Also verify `agent-registry.asWhitelist()` contains `<id>` (Drift 5).
+
+5. **Send a v0.1 envelope dispatch test** from a dispatcher session. Use the full 20+ field envelope. Key fields for HR1 / Drift 5 to pass:
+   - `intent: "sub-task"` (or any value in `mainIntentsAllowlist`)
+   - `source: "main"` (sender agentId, must be in Drift 5 whitelist)
+   - `target_session_key: "agent:<id>:main"` (3-segment strict main → HR1 fires)
+   - `sender_role: "bus"` (dispatcher's role)
+   - `target_role: "main"`
+
+6. **New agent replies** using `buildV01Reply()` helper. See `spec/examples/buildV01Reply.mjs` for the reference implementation, and `docs/common-blocks-and-fix.md` for the 5 most common field-shape mistakes.
+
+### Verify checklist (new agent go-live)
+
+- [ ] agent entry in `openclaw.json agents.list[]`
+- [ ] `tools.agentToAgent.allow[]` includes `<id>`
+- [ ] `~/.openclaw/agents/<id>/sessions/` exists
+- [ ] post-restart `plugins inspect peer-contract-enforcer --runtime` log contains `<id>`
+- [ ] Drift 5 whitelist contains `<id>` (`agent-registry.asWhitelist()`)
+- [ ] 4 cases verified:
+  - [ ] dispatch to new agent main (intent in allowlist) → ALLOW
+  - [ ] dispatch to new agent work (cross-agent) → BLOCK (P1 cross_agent_to_work)
+  - [ ] new agent reply back (helper template) → ALLOW, audit log has correlationId
+  - [ ] new agent work→bus cross-agent (post-P0-3 sessions) → BLOCK (HR2 parent check)
+- [ ] helper template uses `currentSessionKey`, NOT `incoming.target_session_key` (踩坑 #3)
+
+### Known limitation (P0-3 migration gap, does not block new agents)
+
+P0-3 fix only affects sessions spawned **after** the P0-3 fix (2026-08-22 11:20). For the new agent's first `session_start`, `parent=null` until a sub-agent spawns; that sub-agent then inherits parent properly and HR2 fires. Trial-week coder session (`coder.run:v1.1-sync` 8/22 6:33, pre-P0-3) has the same `parent=null` situation; documented as known migration gap in `docs/known-limitations.md` (deferred; not blocking ship).
