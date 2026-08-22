@@ -1,0 +1,47 @@
+{
+  "version": "0.1.0",
+  "envelope_id": "550e8400-e29b-41d4-a716-446655440000",
+  "routing": {
+    "dispatch_id": "550e8400-e29b-41d4-a716-446655440000",
+    "dialog_key": "task.123.dispatch",
+    "source_session_key": "agent:peer-trial:main",
+    "target_session_key": "agent:peer-trial:work:task-123:primary",
+    "source_role": "main",
+    "target_role": "work",
+    "timestamp": "2026-08-22T03:00:00.000Z",
+    "intent": "task_assignment"
+  },
+  "isolation": {
+    "context_scope": "self",
+    "payload_self_contained": true,
+    "cross_session_query_ack": false,
+    "context_leak_protection": "strict"
+  },
+  "multi_turn": {
+    "lifecycle": "spawn_request",
+    "yield_pattern": ["pending", "accepted", "in_progress", "yielded", "completed"],
+    "sub_session_request": {
+      "task_id": "task-123",
+      "parent_session_key": "agent:peer-trial:main",
+      "expected_yield": "multi_yield"
+    }
+  },
+  "bus": {
+    "coordination_kind": "task_assignment",
+    "task_assignment": {
+      "task_id": "task-123",
+      "assign_to": "agent:peer-trial:work:task-123:primary",
+      "expected_completion": "2026-08-22T05:00:00.000Z",
+      "priority": "high"
+    },
+    "bus_session_required": true
+  },
+  "body": {
+    "task": "Implement 5 JSON schemas in spec/",
+    "constraints": ["zero deps", "JSON Schema Draft 2020-12"]
+  },
+  "size_cap": {
+    "max_bytes": 65536,
+    "current_bytes": 1240
+  }
+}

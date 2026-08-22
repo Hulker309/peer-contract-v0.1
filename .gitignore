@@ -1,0 +1,57 @@
+# Build artifacts
+node_modules/
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Plugin runtime state
+peer-contract-enforcer-audit.jsonl
+*-audit.jsonl
+core-*.txt
+core-*.dmp
+
+# Working / scratch (not for v0.1 release)
+archive/
+docs/_scratch/
+docs/_wip/
+*.swp
+*.bak
+*~
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+*.iml
+
+# Test artifacts
+coverage/
+.nyc_output/
+test-results/
+.playwright-report/
+
+# OS
+.DS_Store
+.directory
+Thumbs.db
+desktop.ini
+
+# Local-only environment
+.env
+.env.local
+*.local
+
+# Build/dist (CLI is zero-dep, no build step)
+dist/
+build/
+out/
+
+# Documentation build artifacts (we use markdown directly)
+docs/_build/
+site/
+
+# plugin working files (revert remnants, day 5 working files)
+plugin-src-before-revert/
+plugin-src-pre-project-revert/
+plugin-src-*.txt

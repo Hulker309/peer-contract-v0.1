@@ -1,0 +1,33 @@
+{
+  "name": "peer-contract-enforcer",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "OpenClaw plugin that enforces peer-contract v2 hard rules 1-9 via plugin hooks (path D)",
+  "dependencies": {
+    "typebox": "1.3.3"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.7.1"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "openclaw": {
+    "extensions": [
+      "./src/index.js"
+    ]
+  },
+  "scripts": {
+    "test": "node tests/hr9-work-toolset.test.mjs && node tests/hr1-hr6-schema-validation.test.mjs && node tests/hr4-hr7.test.mjs && node tests/hr5-audit.test.mjs && node tests/hr-e2e.test.mjs && node tests/hr-day6a-followup.test.mjs && node tests/role-registry-lifecycle.test.mjs",
+    "test:hr1-hr6": "node tests/hr1-hr6-schema-validation.test.mjs",
+    "test:hr4-hr7": "node tests/hr4-hr7.test.mjs",
+    "test:hr5-audit": "node tests/hr5-audit.test.mjs",
+    "test:hr9": "node tests/hr9-work-toolset.test.mjs",
+    "test:e2e": "node tests/hr-e2e.test.mjs",
+    "test:day6a-followup": "node tests/hr-day6a-followup.test.mjs",
+    "test:lifecycle": "node tests/role-registry-lifecycle.test.mjs"
+  }
+}

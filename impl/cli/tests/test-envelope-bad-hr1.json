@@ -1,0 +1,27 @@
+{
+  "version": "0.1.0",
+  "envelope_id": "660e8400-e29b-41d4-a716-446655440001",
+  "routing": {
+    "dispatch_id": "660e8400-e29b-41d4-a716-446655440001",
+    "dialog_key": "task.124.bad",
+    "source_session_key": "agent:peer-trial:main",
+    "target_session_key": "agent:peer-trial:main",
+    "source_role": "main",
+    "target_role": "main",
+    "timestamp": "2026-08-22T03:00:00.000Z",
+    "intent": "task_assignment"
+  },
+  "isolation": {
+    "context_scope": "self",
+    "payload_self_contained": true,
+    "cross_session_query_ack": false,
+    "context_leak_protection": "strict"
+  },
+  "body": {
+    "task": "This should be flagged: main→main with task_assignment intent (HR1 default-to-main)"
+  },
+  "size_cap": {
+    "max_bytes": 65536,
+    "current_bytes": 280
+  }
+}

@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>peer-contract v0.1 — 通用 agent-to-agent 通信协议</title>
+  <meta name="description" content="agent 之间的通用通信协议。5 份 JSON Schema，零依赖 CLI，OpenClaw 插件以 enforce 模式 enforce 9 条硬规则。" />
+  <style>
+    :root {
+      --bg: #0e1116;
+      --bg-elev: #161b22;
+      --fg: #e6edf3;
+      --fg-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-2: #7ee787;
+      --warn: #f0883e;
+      --err: #ff7b72;
+      --border: #30363d;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #ffffff;
+        --bg-elev: #f6f8fa;
+        --fg: #1f2328;
+        --fg-muted: #59636e;
+        --accent: #0969da;
+        --accent-2: #1a7f37;
+        --warn: #9a6700;
+        --err: #cf222e;
+        --border: #d0d7de;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+    .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+    .lang-toggle {
+      position: absolute; top: 1.5rem; right: 1.5rem;
+      font-size: 0.875rem;
+    }
+    .lang-toggle a {
+      color: var(--accent);
+      text-decoration: none;
+      padding: 0.25rem 0.5rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .lang-toggle a:hover { background: var(--bg-elev); }
+
+    .hero {
+      text-align: center;
+      padding: 4rem 0 3rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 3rem;
+    }
+    .hero h1 {
+      font-size: clamp(2.5rem, 5vw, 3.5rem);
+      margin: 0 0 0.5rem;
+      letter-spacing: -0.02em;
+      font-weight: 700;
+    }
+    .hero .tagline {
+      font-size: 1.25rem;
+      color: var(--fg-muted);
+      max-width: 700px;
+      margin: 0 auto 1.5rem;
+    }
+    .hero .badges {
+      display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center;
+      margin-top: 1rem;
+    }
+    .badge {
+      display: inline-flex; align-items: center; gap: 0.25rem;
+      padding: 0.25rem 0.6rem;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.8125rem;
+      font-family: var(--font-mono);
+      color: var(--fg-muted);
+    }
+    .badge.green { color: var(--accent-2); border-color: var(--accent-2); }
+    .badge.blue { color: var(--accent); border-color: var(--accent); }
+
+    .purpose {
+      background: var(--bg-elev);
+      border-left: 4px solid var(--accent);
+      padding: 1.25rem 1.5rem;
+      border-radius: 0 8px 8px 0;
+      margin: 2rem 0;
+    }
+    .purpose .label {
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+      color: var(--fg-muted);
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+    .purpose p { margin: 0.25rem 0 0; font-size: 1.0625rem; }
+
+    h2 {
+      font-size: 1.5rem;
+      margin: 3rem 0 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    h3 { font-size: 1.125rem; margin: 1.5rem 0 0.5rem; }
+
+    .problem-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    .problem-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+    }
+    .problem-card .num {
+      display: inline-block;
+      width: 1.75rem; height: 1.75rem;
+      line-height: 1.75rem;
+      text-align: center;
+      background: var(--err);
+      color: white;
+      border-radius: 50%;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    .problem-card .title { font-weight: 600; margin-bottom: 0.25rem; }
+    .problem-card .desc { font-size: 0.9375rem; color: var(--fg-muted); margin: 0; }
+
+    .solution-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    .solution-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--accent-2);
+      border-radius: 8px;
+      padding: 1.25rem;
+    }
+    .solution-card .num {
+      display: inline-block;
+      width: 1.75rem; height: 1.75rem;
+      line-height: 1.75rem;
+      text-align: center;
+      background: var(--accent-2);
+      color: var(--bg);
+      border-radius: 50%;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    .solution-card .title { font-weight: 600; margin-bottom: 0.25rem; }
+    .solution-card .desc { font-size: 0.9375rem; color: var(--fg-muted); margin: 0; }
+
+    .diagram {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin: 1.5rem 0;
+      overflow-x: auto;
+    }
+    .diagram .diagram-title {
+      font-size: 0.8125rem;
+      color: var(--fg-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.75rem;
+      font-weight: 700;
+    }
+    .diagram pre.mermaid {
+      background: transparent;
+      margin: 0;
+      text-align: center;
+    }
+    .mermaid svg { max-width: 100%; height: auto; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    .layout-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+    }
+    .layout-card .icon {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+    .layout-card .name { font-weight: 600; margin-bottom: 0.25rem; }
+    .layout-card .desc { font-size: 0.875rem; color: var(--fg-muted); margin: 0; }
+
+    .status {
+      background: var(--bg-elev);
+      border: 1px solid var(--accent-2);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin: 2rem 0;
+    }
+    .status .title {
+      font-weight: 600;
+      color: var(--accent-2);
+      margin-bottom: 0.5rem;
+    }
+    .status .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.75rem;
+    }
+    .status .item { font-size: 0.875rem; }
+    .status .item .label { color: var(--fg-muted); display: block; }
+    .status .item .value { font-family: var(--font-mono); }
+
+    .footer {
+      margin-top: 4rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border);
+      color: var(--fg-muted);
+      font-size: 0.875rem;
+      text-align: center;
+    }
+    .footer a { color: var(--accent); text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+
+    @media print {
+      body { background: white; color: black; }
+      .diagram { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="lang-toggle">
+    <a href="index.html">EN</a>
+  </div>
+
+  <div class="container">
+
+    <div class="hero">
+      <h1>peer-contract v0.1</h1>
+      <p class="tagline">agent 之间的通用通信协议。5 份 JSON Schema，零依赖 CLI，OpenClaw 插件以 enforce 模式运行，enforce 9 条硬规则。</p>
+      <div class="badges">
+        <span class="badge green">v0.1.0</span>
+        <span class="badge">MIT</span>
+        <span class="badge blue">166/166 tests</span>
+        <span class="badge">5/7 e2e PASS + 2/7 e2e BLOCK（符合设计）</span>
+        <span class="badge">OpenClaw 0.7.1+</span>
+      </div>
+    </div>
+
+    <div class="purpose">
+      <div class="label">战略目的</div>
+      <p>当 agent（LLM 驱动或其他）互相委派工作时，没有契约层会导致三个问题：隐式路由、上下文泄漏、责任链断裂。peer-contract v0.1 用显式路由（HR1）、自包含 payload（HR4）、不可变验收标准（HR7）、追加式审计日志（HR5）解决所有三个。OpenClaw 插件在 enforce 模式运行时 enforce 9 条硬规则，包含 intent-aware 的 HR1 和跨 agent 到 work 的 block，符合战略设计意图。</p>
+    </div>
+
+    <h2>三个核心问题</h2>
+    <div class="problem-grid">
+      <div class="problem-card">
+        <div class="num">1</div>
+        <div class="title">隐式路由</div>
+        <p class="desc">工作派到了错误的 session（通常是协调者的 main），因为调度者必须猜 target。</p>
+      </div>
+      <div class="problem-card">
+        <div class="num">2</div>
+        <div class="title">上下文泄漏</div>
+        <p class="desc">接收方继承过多或过少的状态，导致反应过激或不足。</p>
+      </div>
+      <div class="problem-card">
+        <div class="num">3</div>
+        <div class="title">无责任链</div>
+        <p class="desc">没有谁派了什么、用什么 AC 的审计记录，责任链断裂。</p>
+      </div>
+    </div>
+
+    <h2>协议一次解决三个</h2>
+    <div class="solution-grid">
+      <div class="solution-card">
+        <div class="num">✓</div>
+        <div class="title">显式 <code>target_session_key</code></div>
+        <p class="desc">每个 dispatch 携带 target。HR1 (no-default-to-main) 拦隐式路由。</p>
+      </div>
+      <div class="solution-card">
+        <div class="num">✓</div>
+        <div class="title">自包含 payload</div>
+        <p class="desc">显式 <code>context_scope</code> + HR4。没有"查一下"这种隐式引用。</p>
+      </div>
+      <div class="solution-card">
+        <div class="num">✓</div>
+        <div class="title">AC 不可变 + 审计</div>
+        <p class="desc">HR7 锁住验收标准，worker 不能改。HR5 跨 session query 必写 audit log。</p>
+      </div>
+    </div>
+
+    <h2>Dispatch 走插件的完整流程</h2>
+    <div class="diagram">
+      <div class="diagram-title">端到端 dispatch 序列</div>
+      <pre class="mermaid">
+sequenceDiagram
+    participant A as Agent A
+    participant O as OpenClaw 18789
+    participant P as peer-contract-enforcer
+    participant L as 跨 agent audit log
+    A->>O: sessions_send(target=..., payload=v0.1)
+    O->>P: before_tool_call(event)
+    Note over P: HR1 intent-aware<br/>+ 跨 agent 到 work block
+    P->>P: HR6 schema + session-existence
+    P->>P: CONTRACT Drift 1-6
+    P->>P: HR2/HR3/HR7/HR8/HR9
+    alt allow
+        P-->>O: undefined (allow)
+        O->>A: deliver message
+        A->>O: response (message_sending)
+        O->>P: message_sending hook
+        P->>L: append cross_session_message (带 correlationId)
+    else block
+        P-->>O: { block: true, blockReason }
+        O-->>A: BLOCK 带 reason
+    end
+      </pre>
+    </div>
+
+    <h2>9 条硬规则（HR1-HR9）</h2>
+    <div class="diagram">
+      <div class="diagram-title">Runtime vs Static 强制</div>
+      <pre class="mermaid">
+graph TB
+    subgraph Runtime["Runtime（插件 enforce）"]
+        HR1["HR1: no-default-to-main<br/>（intent-aware）"]
+        HR2["HR2: no-cross-work-direct<br/>（parent check）"]
+        HR3["HR3: no-user-to-work"]
+        HR5["HR5: audit log"]
+        HR6["HR6: target session exists"]
+        HR7["HR7: AC 不可变 by worker"]
+        HR8["HR8: payload size cap"]
+        HR9["HR9: work 工具集受限"]
+    end
+    subgraph Static["Static（schema validate）"]
+        HR4["HR4: payload self-contained"]
+    end
+    Dispatch[Dispatch] --> HR1
+    HR1 --> HR2
+    HR2 --> HR3
+    HR3 --> HR4
+    HR4 --> HR5
+    HR5 --> HR6
+    HR6 --> HR7
+    HR7 --> HR8
+    HR8 --> HR9
+    style HR1 fill:#7ee787
+    style HR2 fill:#7ee787
+    style HR5 fill:#7ee787
+    style HR6 fill:#7ee787
+      </pre>
+    </div>
+
+    <h2>bus / work / main — 协调模型</h2>
+    <div class="diagram">
+      <div class="diagram-title">每个 agent 的两层 session 模型</div>
+      <pre class="mermaid">
+graph TB
+    Main["main<br/>协调层<br/>（CEO / dashboard）"]
+    BusA["bus A<br/>agent A 的对外接口"]
+    BusB["bus B<br/>agent B 的对外接口"]
+    WorkA["work A<br/>手"]
+    WorkB["work B<br/>手"]
+    Main -.inform/query.-> BusA
+    Main -.inform/query.-> BusB
+    BusA -->|同 agent<br/>sub-session spawn| WorkA
+    BusB -->|同 agent<br/>sub-session spawn| WorkB
+    WorkA -.yield_report.-> BusA
+    WorkB -.yield_report.-> BusB
+    BusA -.跨 agent<br/>dispatch.-> BusB
+    BusA X--x|"HR1 跨 agent 到 work"| WorkB
+    BusB X--x|"HR1 跨 agent 到 work"| WorkA
+    style BusA fill:#58a6ff,color:#0e1116
+    style BusB fill:#58a6ff,color:#0e1116
+    style WorkA fill:#f0883e,color:#0e1116
+    style WorkB fill:#f0883e,color:#0e1116
+    style Main fill:#7ee787,color:#0e1116
+      </pre>
+    </div>
+
+    <h2>仓库结构</h2>
+    <div class="layout">
+      <div class="layout-card">
+        <div class="icon">spec/</div>
+        <div class="name">5 份 JSON Schema</div>
+        <p class="desc">公开协议 — dispatch、isolation、multi-turn、bus、envelope。Platform-agnostic。</p>
+      </div>
+      <div class="layout-card">
+        <div class="icon">impl/cli/</div>
+        <div class="name">零依赖 CLI</div>
+        <p class="desc">Node.js，无 <code>ajv</code>/<code>zod</code>。4 个子命令：<code>check</code>、<code>validate-schema</code>、<code>ac-chain</code>、<code>dry-run</code>。</p>
+      </div>
+      <div class="layout-card">
+        <div class="icon">impl/openclaw-plugin/</div>
+        <div class="name">OpenClaw 插件</div>
+        <p class="desc">12 src + 10 test 文件。在运行时 enforce HR1/HR5/HR6（enforce 模式）。</p>
+      </div>
+      <div class="layout-card">
+        <div class="icon">scenarios/</div>
+        <div class="name">2 个 YAML</div>
+        <p class="desc">端到端 dry-run 场景：basic dispatch + multi-turn AC chain。</p>
+      </div>
+      <div class="layout-card">
+        <div class="icon">docs/</div>
+        <div class="name">8 篇维护文档</div>
+        <p class="desc">architecture、maintainability、known-limitations、post-install-procedures + 4 篇设计 notes。</p>
+      </div>
+      <div class="layout-card">
+        <div class="icon">INSTALL.md</div>
+        <div class="name">3 步安装</div>
+        <p class="desc">零 <code>npm install -g</code>，零 PATH 改，不污染 Hermes / OpenClaw prod。</p>
+      </div>
+    </div>
+
+    <h2>ship 状态（v0.1 一次成型）</h2>
+    <div class="status">
+      <div class="title">v0.1.0 ship 状态 — 2026-08-22</div>
+      <div class="grid">
+        <div class="item"><span class="label">prod 插件</span><span class="value">18789（PID 验过）</span></div>
+        <div class="item"><span class="label">已装插件数</span><span class="value">5 / 5</span></div>
+        <div class="item"><span class="label">单元测试</span><span class="value">166 / 166</span></div>
+        <div class="item"><span class="label">端到端</span><span class="value">5 / 7 PASS + 2 / 7 BLOCK（符合设计）</span></div>
+        <div class="item"><span class="label">模式</span><span class="value">enforce（<code>dryRun: false</code>）</span></div>
+        <div class="item"><span class="label">设计意图</span><span class="value">用户 10:40 确认</span></div>
+        <div class="item"><span class="label">work sessions</span><span class="value">151（bootstrap）</span></div>
+        <div class="item"><span class="label">v0.2</span><span class="value">不存在（一次成型）</span></div>
+      </div>
+    </div>
+
+    <h2>战略设计意图（用户拍板）</h2>
+    <ul>
+      <li><strong>一次成型</strong>：v0.1 是单次协议层。无 v0.2（用户 9/22 9:48 明确拍板）。</li>
+      <li><strong>Enforce 模式</strong>：<code>dryRun: false</code>（用户 6/22 06:09）。无 shadow mode。</li>
+      <li><strong>战略范围 = agent↔agent</strong>：运行时 enforce HR1/5/6。HR2/3/9 dormant（B 方案用户 7/14 拍板）。</li>
+      <li><strong>跨 agent 到 work block</strong>：Kelsen.bus → coder.work 是 anti-pattern（用户 9/22 9:21 architectural critique）。</li>
+      <li><strong>v1.1 compat drop</strong>：Coder 必须迁到 v0.1 格式（用户 6/14）。</li>
+    </ul>
+
+    <h2>快速上手</h2>
+    <pre><code># Clone
+git clone https://github.com/Hulker309/peer-contract-v0.1
+cd peer-contract-v0.1
+
+# 验证 dispatch envelope
+node impl/cli/bin/peer-contract.js check impl/cli/tests/test-envelope-ok.json
+# 期望：OK envelope valid, exit 0
+
+# 跑 scenarios
+node impl/cli/bin/peer-contract.js dry-run scenarios/01-basic-dispatch.yaml --reset-state
+
+# 跑全部测试
+npm test
+# 期望：peer-contract 0.1.0 / OK envelope valid / 166 tests pass</code></pre>
+
+    <h2>装到 OpenClaw</h2>
+    <p>看 <a href="INSTALL.md">INSTALL.md</a>，3 步装到 OpenClaw 0.7.1+。零 <code>npm install -g</code>，零 PATH 改，不污染其他软件。</p>
+
+    <div class="footer">
+      <p>
+        <a href="https://github.com/Hulker309/peer-contract-v0.1">View on GitHub</a> ·
+        <a href="README.md">README</a> ·
+        <a href="INSTALL.md">INSTALL</a> ·
+        <a href="docs/maintainability.md">维护指南</a> ·
+        <a href="docs/known-limitations.md">已知限制</a>
+      </p>
+      <p>peer-contract v0.1.0 · MIT license · ship date 2026-08-22</p>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default', securityLevel: 'loose' });
+  </script>
+</body>
+</html>

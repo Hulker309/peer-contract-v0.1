@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://peer-contract.v0.1/spec/04-bus.schema.json",
+  "title": "peer-contract v0.1 - Bus Coordination",
+  "description": "Bus coordination protocol. Solves core problem #4 (bus is a coordination mechanism, not a message queue) - bus sessions coordinate task assignment, progress sync, yield reporting across multi-agent workflows.",
+  "type": "object",
+  "required": ["coordination_kind"],
+  "additionalProperties": false,
+  "properties": {
+    "coordination_kind": {
+      "type": "string",
+      "enum": ["task_assignment", "progress_sync", "yield_report", "broadcast", "ack", "nack"],
+      "description": "Type of bus coordination. Drives recipient behavior."
+    },
+    "task_assignment": {
+      "type": "object",
+      "description": "If coordination_kind=task_assignment, this object MUST be present.",
+      "additionalProperties": false,
+      "required": ["task_id", "assign_to", "expected_completion"],
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-\\.]+$"
+        },
+        "assign_to": {
+          "type": "string",
+          "pattern": "^agent:[^:]+:(main|bus|work)(:[^:]+)*$",
+          "description": "Target session key. Must be a work or main session (HR3: user-channel-originated → work blocked at runtime)."
+        },
+        "expected_completion": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO8601 deadline. Bus uses this to flag overdue tasks."
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "normal", "high", "urgent"],
+          "default": "normal"
+        },
+        "block_until_complete": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, dispatcher (bus) blocks progress until assign_to yields. If false, async fire-and-forget."
+        }
+      }
+    },
+    "progress_sync": {
+      "type": "object",
+      "description": "If coordination_kind=progress_sync, this object MUST be present.",
+      "additionalProperties": false,
+      "required": ["agent_id", "current_state"],
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "description": "Agent reporting progress."
+        },
+        "current_state": {
+          "type": "string",
+          "enum": ["idle", "queued", "running", "blocked", "yielded", "completed", "failed"],
+          "description": "Agent's current high-level state."
+        },
+        "active_task_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tasks currently in flight."
+        },
+        "yielded_dispatch_ids": {
+          "type": "array",
+          "items": { "type": "string", "format": "uuid" },
+          "description": "Dispatches the agent has yielded (awaiting bus response)."
+        },
+        "last_heartbeat": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "yield_report": {
+      "type": "object",
+      "description": "If coordination_kind=yield_report, this object MUST be present.",
+      "additionalProperties": false,
+      "required": ["task_id", "yielded_by", "yield_status"],
+      "properties": {
+        "task_id": { "type": "string" },
+        "yielded_by": {
+          "type": "string",
+          "pattern": "^agent:[^:]+:(main|bus|work):[^:]+(:[^:]+)*$"
+        },
+        "yield_status": {
+          "type": "string",
+          "enum": ["interim", "final", "blocked", "error"]
+        },
+        "yield_content_ref": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Dispatch ID of the full yield report (separate from this coordination message)."
+        },
+        "next_action_requested": {
+          "type": "string",
+          "enum": ["continue", "pause", "cancel", "revise", "accept", "reject"],
+          "description": "What the agent wants the bus to do next."
+        }
+      }
+    },
+    "bus_session_required": {
+      "type": "boolean",
+      "default": true,
+      "description": "If true, recipient MUST be a bus-role session. Default true. Set false only for direct main↔main or main↔work coordination outside bus flow."
+    },
+    "broadcast": {
+      "type": "object",
+      "description": "If coordination_kind=broadcast, this object describes the broadcast scope.",
+      "additionalProperties": false,
+      "required": ["scope"],
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": ["all_agents", "agents_in_dialog", "role_filter"]
+        },
+        "role_filter": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["main", "bus", "work"] }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "coordination_kind": "task_assignment",
+      "task_assignment": {
+        "task_id": "task-123",
+        "assign_to": "agent:peer-trial:work:task-123:primary",
+        "expected_completion": "2026-08-22T05:00:00.000Z",
+        "priority": "high",
+        "block_until_complete": false
+      }
+    },
+    {
+      "coordination_kind": "progress_sync",
+      "progress_sync": {
+        "agent_id": "peer-trial",
+        "current_state": "running",
+        "active_task_ids": ["task-123"]
+      }
+    }
+  ]
+}

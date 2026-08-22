@@ -1,0 +1,64 @@
+# Scenario 01: Basic Dispatch
+# Tests: envelope_check + isolation_check + bus_task_assignment
+# Expected: all OK
+name: Basic Dispatch
+description: |
+  A in main session wants to dispatch a task to a work session.
+  Verifies envelope schema + isolation (self-contained) + bus task assignment.
+
+steps:
+  - label: Build envelope
+    action: envelope_check
+    envelope:
+      version: "0.1.0"
+      envelope_id: "11111111-2222-3333-4444-555555555555"
+      routing:
+        dispatch_id: "11111111-2222-3333-4444-555555555555"
+        dialog_key: "scenario.01.basic"
+        source_session_key: "agent:peer-trial:main"
+        target_session_key: "agent:peer-trial:work:task-01:primary"
+        source_role: "main"
+        target_role: "work"
+        timestamp: "2026-08-22T04:00:00.000Z"
+        intent: "task_assignment"
+      isolation:
+        context_scope: "self"
+        payload_self_contained: true
+        cross_session_query_ack: false
+        context_leak_protection: "strict"
+      multi_turn:
+        lifecycle: "spawn_request"
+        yield_pattern: ["pending", "accepted", "in_progress", "yielded", "completed"]
+        sub_session_request:
+          task_id: "task-01"
+          parent_session_key: "agent:peer-trial:main"
+          expected_yield: "multi_yield"
+      bus:
+        coordination_kind: "task_assignment"
+        task_assignment:
+          task_id: "task-01"
+          assign_to: "agent:peer-trial:work:task-01:primary"
+          expected_completion: "2026-08-22T06:00:00.000Z"
+          priority: "normal"
+        bus_session_required: true
+      body:
+        task: "Dry-run test of basic dispatch flow"
+      size_cap:
+        max_bytes: 65536
+        current_bytes: 980
+
+  - label: HR1 check (target not main, no default-to-main)
+    action: hr1_check
+
+  - label: HR2 check (main→work ok)
+    action: hr2_check
+
+  - label: Isolation check (self + self-contained)
+    action: isolation_check
+
+  - label: Bus task_assignment recognized
+    action: bus_task_assignment
+
+  - label: HR9 check (work toolset: read, exec, write, sessions_history - all allowed)
+    action: hr9_check
+    work_session_tools: ["read", "write", "exec", "sessions_history", "memory_search"]

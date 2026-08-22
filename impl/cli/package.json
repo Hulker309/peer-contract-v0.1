@@ -1,0 +1,20 @@
+{
+  "name": "peer-contract",
+  "version": "0.1.0",
+  "description": "peer-contract v0.1 CLI - dispatch validation, AC chain tracking, dry-run scenarios. Zero dependencies.",
+  "main": "src/index.js",
+  "bin": {
+    "peer-contract": "bin/peer-contract.js"
+  },
+  "scripts": {
+    "test": "node tests/run-tests.js",
+    "smoke": "node tests/smoke.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "license": "UNLICENSED",
+  "private": true
+}

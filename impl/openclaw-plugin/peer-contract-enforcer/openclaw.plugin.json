@@ -1,0 +1,55 @@
+{
+  "id": "peer-contract-enforcer",
+  "name": "Peer Contract Enforcer",
+  "description": "Enforces peer-contract v2 hard rules 1-9 via OpenClaw plugin hooks (path D). 9 hard rules enforced via before_tool_call / subagent_spawned / session_start / session_end / message_sending hooks.",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "dryRun": {
+        "type": "boolean",
+        "default": false,
+        "description": "Shadow mode: log HR violations but do not block. Use for compatibility testing (e.g. v1.1 dispatch coexistence). Mavis Day 6 add."
+      },
+      "auditQueryContent": {
+        "type": "boolean",
+        "default": false,
+        "description": "Whether to log query content in HR5 audit (default: false for privacy)"
+      },
+      "payloadSizeCapBytes": {
+        "type": "number",
+        "default": 65536,
+        "description": "Max payload size in bytes (HR8 default: 64KB)"
+      },
+      "mainSessionKeyPattern": {
+        "type": "string",
+        "default": "^agent:[^:]+:main(:.*)?$",
+        "description": "Regex for identifying main session keys. v0.1.1: relaxed to allow trailing context segment (e.g. agent:user:main:dashboard:<uuid>)."
+      },
+      "workSessionKeyPattern": {
+        "type": "string",
+        "default": "^agent:[^:]+:work(:.*)?$",
+        "description": "Regex for identifying work session keys. v0.1.2: only matches v0.1's own work: namespace. OpenClaw's subagent: sub-sessions are NOT classified as work here — they're an OpenClaw-internal lifecycle concept, plugin stays out of it. Plugin's strategic scope is agent-to-agent (main↔main via bus, HR1/5/6), not intra-agent sub-session management (HR2/3/9 fall back to dormant)."
+      },
+      "busSessionKeyPattern": {
+        "type": "string",
+        "default": "^agent:[^:]+:bus(:.*)?$",
+        "description": "Regex for identifying bus session keys. v0.1.1: relaxed for OpenClaw bus:webchat:user pattern."
+      },
+      "mainIntentsAllowlist": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": ["inform", "query", "sub-task", "response", "ack", "ping"],
+        "description": "Intents that may target a main session without triggering HR1 (no-default-to-main) block. Day 6a followup (Mavis 2026-08-22 09:34, Kelsen report 9:06 Issue 1). The default `task_assignment` is intentionally NOT in the allowlist — task_assignment to a main session is exactly the no-default-to-main anti-pattern that HR1 was designed to catch."
+      },
+      "crossAgentToWorkBlocked": {
+        "type": "boolean",
+        "default": true,
+        "description": "If true, block cross-agent dispatch to work sessions (sender agentId != target agentId, target matches workSessionKeyPattern). Day 6a followup (Mavis 2026-08-22 09:34, user architectural critique: cross-agent dispatch to work bypasses target agent's coordination layer — anti-pattern)."
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "peer-contract-v0.1",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Generic agent-to-agent communication protocol + OpenClaw plugin (peer-contract v0.1)",
+  "license": "MIT",
+  "author": "Hulker309 (boss), Mavis (peer agent), Kelsen (validation)",
+  "scripts": {
+    "test:cli": "node impl/cli/bin/peer-contract.js --version",
+    "test:cli:smoke": "node impl/cli/bin/peer-contract.js check impl/cli/tests/test-envelope-ok.json",
+    "test:plugin": "node impl/openclaw-plugin/peer-contract-enforcer/tests/_run-all.js",
+    "test": "npm run test:cli && npm run test:cli:smoke && npm run test:plugin",
+    "docs:list": "node -e \"console.log(require('fs').readdirSync('docs').join('\\n'))\""
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "agent",
+    "agent-to-agent",
+    "protocol",
+    "openclaw",
+    "hr-rules",
+    "v0.1"
+  ]
+}

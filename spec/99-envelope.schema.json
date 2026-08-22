@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://peer-contract.v0.1/spec/99-envelope.schema.json",
+  "title": "peer-contract v0.1 - Envelope (Complete Dispatch)",
+  "description": "Top-level envelope for a single dispatch. Combines dispatch routing + isolation + multi-turn + bus. This is the on-the-wire format.",
+  "type": "object",
+  "required": ["version", "envelope_id", "routing", "isolation", "size_cap"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "0.1.0",
+      "description": "Schema version. Bump on breaking changes."
+    },
+    "envelope_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique ID for this envelope (= routing.dispatch_id). Tracked in audit log."
+    },
+    "routing": {
+      "$ref": "01-dispatch.schema.json",
+      "description": "Dispatch routing (target_session_key, source_role, target_role, etc.)"
+    },
+    "isolation": {
+      "$ref": "02-isolation.schema.json",
+      "description": "Session isolation (context_scope, payload_self_contained, cross_session_query_ack)."
+    },
+    "multi_turn": {
+      "$ref": "03-multi-turn.schema.json",
+      "description": "Optional. If this dispatch carries multi-turn sub-session info (spawn request, AC, yield)."
+    },
+    "bus": {
+      "$ref": "04-bus.schema.json",
+      "description": "Optional. If this dispatch is a bus coordination message (task_assignment, progress_sync, etc.)."
+    },
+    "body": {
+      "type": "object",
+      "description": "Actual payload. Free-form, application-specific. Must be self-contained unless isolation.cross_session_query_ack=true.",
+      "additionalProperties": true
+    },
+    "size_cap": {
+      "type": "object",
+      "description": "HR8: payload size cap. Enforced by validator.",
+      "additionalProperties": false,
+      "required": ["max_bytes"],
+      "properties": {
+        "max_bytes": {
+          "type": "integer",
+          "const": 65536,
+          "description": "HR8: 64KB cap on entire envelope serialized."
+        },
+        "current_bytes": {
+          "type": "integer",
+          "description": "Optional. Sender-computed size for early validation."
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "description": "Optional. Audit metadata. Plugin/runtime adds more on receipt.",
+      "additionalProperties": false,
+      "properties": {
+        "sender_clock_drift_ms": {
+          "type": "integer",
+          "description": "Optional. Sender's measured clock drift. Used by recipient for ordering."
+        },
+        "intent_human": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "Optional. Human-readable intent for audit/dashboard display."
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "description": "HR8: body cap. Envelope total size must not exceed 64KB.",
+      "if": { "required": ["body"] },
+      "properties": {
+        "size_cap": { "required": ["current_bytes"] }
+      }
+    },
+    {
+      "description": "If multi_turn.lifecycle=spawn_request, sub_session_request MUST be present",
+      "if": {
+        "properties": {
+          "multi_turn": { "properties": { "lifecycle": { "const": "spawn_request" } } }
+        }
+      },
+      "then": {
+        "properties": {
+          "multi_turn": { "required": ["sub_session_request"] }
+        }
+      }
+    }
+  ],
+  "examples": [
+    {
+      "version": "0.1.0",
+      "envelope_id": "550e8400-e29b-41d4-a716-446655440000",
+      "routing": {
+        "dispatch_id": "550e8400-e29b-41d4-a716-446655440000",
+        "dialog_key": "task.123.dispatch",
+        "source_session_key": "agent:peer-trial:main",
+        "target_session_key": "agent:peer-trial:work:task-123:primary",
+        "source_role": "main",
+        "target_role": "work",
+        "timestamp": "2026-08-22T03:00:00.000Z",
+        "intent": "task_assignment"
+      },
+      "isolation": {
+        "context_scope": "self",
+        "payload_self_contained": true,
+        "cross_session_query_ack": false,
+        "context_leak_protection": "strict"
+      },
+      "multi_turn": {
+        "lifecycle": "spawn_request",
+        "yield_pattern": ["pending", "accepted", "in_progress", "yielded", "completed"],
+        "sub_session_request": {
+          "task_id": "task-123",
+          "parent_session_key": "agent:peer-trial:main",
+          "expected_yield": "multi_yield"
+        }
+      },
+      "bus": {
+        "coordination_kind": "task_assignment",
+        "task_assignment": {
+          "task_id": "task-123",
+          "assign_to": "agent:peer-trial:work:task-123:primary",
+          "expected_completion": "2026-08-22T05:00:00.000Z",
+          "priority": "high"
+        },
+        "bus_session_required": true
+      },
+      "body": {
+        "task": "Implement 5 JSON schemas in spec/",
+        "constraints": ["zero deps", "JSON Schema Draft 2020-12"]
+      },
+      "size_cap": {
+        "max_bytes": 65536,
+        "current_bytes": 1240
+      }
+    }
+  ]
+}

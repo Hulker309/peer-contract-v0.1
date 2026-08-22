@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>peer-contract v0.1 — Generic Agent-to-Agent Protocol</title>
+  <meta name="description" content="Generic protocol for agent-to-agent communication. Five JSON Schemas, zero-dep CLI, OpenClaw plugin enforcing 9 hard rules in enforce mode." />
+  <style>
+    :root {
+      --bg: #0e1116;
+      --bg-elev: #161b22;
+      --fg: #e6edf3;
+      --fg-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-2: #7ee787;
+      --warn: #f0883e;
+      --err: #ff7b72;
+      --border: #30363d;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #ffffff;
+        --bg-elev: #f6f8fa;
+        --fg: #1f2328;
+        --fg-muted: #59636e;
+        --accent: #0969da;
+        --accent-2: #1a7f37;
+        --warn: #9a6700;
+        --err: #cf222e;
+        --border: #d0d7de;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+    .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+    .lang-toggle {
+      position: absolute; top: 1.5rem; right: 1.5rem;
+      font-size: 0.875rem;
+    }
+    .lang-toggle a {
+      color: var(--accent);
+      text-decoration: none;
+      padding: 0.25rem 0.5rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .lang-toggle a:hover { background: var(--bg-elev); }
+
+    /* Hero */
+    .hero {
+      text-align: center;
+      padding: 4rem 0 3rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 3rem;
+    }
+    .hero h1 {
+      font-size: clamp(2.5rem, 5vw, 3.5rem);
+      margin: 0 0 0.5rem;
+      letter-spacing: -0.02em;
+      font-weight: 700;
+    }
+    .hero .tagline {
+      font-size: 1.25rem;
+      color: var(--fg-muted);
+      max-width: 700px;
+      margin: 0 auto 1.5rem;
+    }
+    .hero .badges {
+      display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center;
+      margin-top: 1rem;
+    }
+    .badge {
+      display: inline-flex; align-items: center; gap: 0.25rem;
+      padding: 0.25rem 0.6rem;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.8125rem;
+      font-family: var(--font-mono);
+      color: var(--fg-muted);
+    }
+    .badge.green { color: var(--accent-2); border-color: var(--accent-2); }
+    .badge.blue { color: var(--accent); border-color: var(--accent); }
+
+    /* Strategic purpose callout */
+    .purpose {
+      background: var(--bg-elev);
+      border-left: 4px solid var(--accent);
+      padding: 1.25rem 1.5rem;
+      border-radius: 0 8px 8px 0;
+      margin: 2rem 0;
+    }
+    .purpose .label {
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+      color: var(--fg-muted);
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+    .purpose p { margin: 0.25rem 0 0; font-size: 1.0625rem; }
+
+    /* Sections */
+    h2 {
+      font-size: 1.5rem;
+      margin: 3rem 0 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    h3 { font-size: 1.125rem; margin: 1.5rem 0 0.5rem; }
+
+    /* Problem grid */
+    .problem-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    .problem-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+    }
+    .problem-card .num {
+      display: inline-block;
+      width: 1.75rem; height: 1.75rem;
+      line-height: 1.75rem;
+      text-align: center;
+      background: var(--err);
+      color: white;
+      border-radius: 50%;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    .problem-card .title { font-weight: 600; margin-bottom: 0.25rem; }
+    .problem-card .desc { font-size: 0.9375rem; color: var(--fg-muted); margin: 0; }
+
+    .solution-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    .solution-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--accent-2);
+      border-radius: 8px;
+      padding: 1.25rem;
+    }
+    .solution-card .num {
+      display: inline-block;
+      width: 1.75rem; height: 1.75rem;
+      line-height: 1.75rem;
+      text-align: center;
+      background: var(--accent-2);
+      color: var(--bg);
+      border-radius: 50%;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    .solution-card .title { font-weight: 600; margin-bottom: 0.25rem; }
+    .solution-card .desc { font-size: 0.9375rem; color: var(--fg-muted); margin: 0; }
+
+    /* Diagrams */
+    .diagram {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin: 1.5rem 0;
+      overflow-x: auto;
+    }
+    .diagram .diagram-title {
+      font-size: 0.8125rem;
+      color: var(--fg-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.75rem;
+      font-weight: 700;
+    }
+    .diagram pre.mermaid {
+      background: transparent;
+      margin: 0;
+      text-align: center;
+    }
+    .mermaid svg { max-width: 100%; height: auto; }
+
+    /* Repo layout */
+    .layout {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    .layout-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+    }
+    .layout-card .icon {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+    .layout-card .name { font-weight: 600; margin-bottom: 0.25rem; }
+    .layout-card .desc { font-size: 0.875rem; color: var(--fg-muted); margin: 0; }
+
+    /* Status banner */
+    .status {
+      background: var(--bg-elev);
+      border: 1px solid var(--accent-2);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin: 2rem 0;
+    }
+    .status .title {
+      font-weight: 600;
+      color: var(--accent-2);
+      margin-bottom: 0.5rem;
+    }
+    .status .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.75rem;
+    }
+    .status .item { font-size: 0.875rem; }
+    .status .item .label { color: var(--fg-muted); display: block; }
+    .status .item .value { font-family: var(--font-mono); }
+
+    /* Footer */
+    .footer {
+      margin-top: 4rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border);
+      color: var(--fg-muted);
+      font-size: 0.875rem;
+      text-align: center;
+    }
+    .footer a { color: var(--accent); text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+
+    /* Print friendly */
+    @media print {
+      body { background: white; color: black; }
+      .diagram { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="lang-toggle">
+    <a href="index.zh.html">中文</a>
+  </div>
+
+  <div class="container">
+
+    <div class="hero">
+      <h1>peer-contract v0.1</h1>
+      <p class="tagline">A generic protocol for agent-to-agent communication. Five JSON Schemas, zero-dep CLI, OpenClaw plugin enforcing 9 hard rules in enforce mode.</p>
+      <div class="badges">
+        <span class="badge green">v0.1.0</span>
+        <span class="badge">MIT</span>
+        <span class="badge blue">166/166 tests</span>
+        <span class="badge">5/7 e2e PASS + 2/7 e2e BLOCK (correct)</span>
+        <span class="badge">OpenClaw 0.7.1+</span>
+      </div>
+    </div>
+
+    <div class="purpose">
+      <div class="label">Strategic purpose</div>
+      <p>When agents (LLM-driven or otherwise) delegate work to each other, three things go wrong without a contract layer: implicit routing, context leakage, and broken chains of accountability. peer-contract v0.1 fixes all three with explicit routing (HR1), self-contained payloads (HR4), immutable acceptance criteria (HR7), and an append-only audit trail (HR5). The OpenClaw plugin enforces 9 hard rules at runtime in enforce mode, with intent-aware HR1 and cross-agent-to-work blocking per the strategic design intent.</p>
+    </div>
+
+    <h2>The three problems</h2>
+    <div class="problem-grid">
+      <div class="problem-card">
+        <div class="num">1</div>
+        <div class="title">Implicit routing</div>
+        <p class="desc">Work lands on the wrong session (often the coordinator's main) because the dispatcher had to guess a target.</p>
+      </div>
+      <div class="problem-card">
+        <div class="num">2</div>
+        <div class="title">Context leakage</div>
+        <p class="desc">The receiver inherits too much or too little state, and either over-acts or under-acts on the request.</p>
+      </div>
+      <div class="problem-card">
+        <div class="num">3</div>
+        <div class="title">No accountability</div>
+        <p class="desc">No audit trail of who-dispatched-what-with-what-AC, so the chain of responsibility breaks down.</p>
+      </div>
+    </div>
+
+    <h2>The protocol fixes all three</h2>
+    <div class="solution-grid">
+      <div class="solution-card">
+        <div class="num">✓</div>
+        <div class="title">Explicit <code>target_session_key</code></div>
+        <p class="desc">Every dispatch carries the target. HR1 (no-default-to-main) blocks implicit routing.</p>
+      </div>
+      <div class="solution-card">
+        <div class="num">✓</div>
+        <div class="title">Self-contained payloads</div>
+        <p class="desc">Explicit <code>context_scope</code> with HR4. No "look this up" implicit references.</p>
+      </div>
+      <div class="solution-card">
+        <div class="num">✓</div>
+        <div class="title">Frozen AC + audit trail</div>
+        <p class="desc">HR7 immutability for acceptance criteria. HR5 audit log per cross-session query.</p>
+      </div>
+    </div>
+
+    <h2>How a dispatch flows through the plugin</h2>
+    <div class="diagram">
+      <div class="diagram-title">End-to-end dispatch sequence</div>
+      <pre class="mermaid">
+sequenceDiagram
+    participant A as Agent A
+    participant O as OpenClaw 18789
+    participant P as peer-contract-enforcer
+    participant L as Per-agent audit log
+    A->>O: sessions_send(target=..., payload=v0.1)
+    O->>P: before_tool_call(event)
+    Note over P: HR1 intent-aware<br/>+ cross-agent-to-work
+    P->>P: HR6 schema + session-existence
+    P->>P: CONTRACT Drift 1-6
+    P->>P: HR2/HR3/HR7/HR8/HR9
+    alt allow
+        P-->>O: undefined (allow)
+        O->>A: deliver message
+        A->>O: response (message_sending)
+        O->>P: message_sending hook
+        P->>L: append cross_session_message (with correlationId)
+    else block
+        P-->>O: { block: true, blockReason }
+        O-->>A: BLOCK with reason
+    end
+      </pre>
+    </div>
+
+    <h2>The 9 hard rules (HR1-HR9)</h2>
+    <div class="diagram">
+      <div class="diagram-title">Runtime vs static enforcement</div>
+      <pre class="mermaid">
+graph TB
+    subgraph Runtime["Runtime (plugin enforces)"]
+        HR1["HR1: no-default-to-main<br/>(intent-aware)"]
+        HR2["HR2: no-cross-work-direct<br/>(parent check)"]
+        HR3["HR3: no-user-to-work"]
+        HR5["HR5: audit log"]
+        HR6["HR6: target session exists"]
+        HR7["HR7: AC immutable by worker"]
+        HR8["HR8: payload size cap"]
+        HR9["HR9: work toolset restricted"]
+    end
+    subgraph Static["Static (schema validates)"]
+        HR4["HR4: payload self-contained"]
+    end
+    Dispatch[Dispatch] --> HR1
+    HR1 --> HR2
+    HR2 --> HR3
+    HR3 --> HR4
+    HR4 --> HR5
+    HR5 --> HR6
+    HR6 --> HR7
+    HR7 --> HR8
+    HR8 --> HR9
+    style HR1 fill:#7ee787
+    style HR2 fill:#7ee787
+    style HR5 fill:#7ee787
+    style HR6 fill:#7ee787
+      </pre>
+    </div>
+
+    <h2>bus / work / main — coordination model</h2>
+    <div class="diagram">
+      <div class="diagram-title">Two-layer session model per agent</div>
+      <pre class="mermaid">
+graph TB
+    Main["main<br/>coordination layer<br/>(CEO / dashboard)"]
+    BusA["bus A<br/>public API of agent A"]
+    BusB["bus B<br/>public API of agent B"]
+    WorkA["work A<br/>hands"]
+    WorkB["work B<br/>hands"]
+    Main -.inform/query.-> BusA
+    Main -.inform/query.-> BusB
+    BusA -->|intra-agent<br/>sub-session spawn| WorkA
+    BusB -->|intra-agent<br/>sub-session spawn| WorkB
+    WorkA -.yield_report.-> BusA
+    WorkB -.yield_report.-> BusB
+    BusA -.cross-agent<br/>dispatch.-> BusB
+    BusA X--x|"HR1 cross-agent-to-work"| WorkB
+    BusB X--x|"HR1 cross-agent-to-work"| WorkA
+    style BusA fill:#58a6ff,color:#0e1116
+    style BusB fill:#58a6ff,color:#0e1116
+    style WorkA fill:#f0883e,color:#0e1116
+    style WorkB fill:#f0883e,color:#0e1116
+    style Main fill:#7ee787,color:#0e1116
+      </pre>
+    </div>
+
+    <h2>Repo layout</h2>
+    <div class="layout">
+      <div class="layout-card">
+        <div class="icon">spec/</div>
+        <div class="name">5 JSON Schemas</div>
+        <p class="desc">Public protocol — dispatch, isolation, multi-turn, bus, envelope. Platform-agnostic.</p>
+      </div>
+      <div class="layout-card">
+        <div class="icon">impl/cli/</div>
+        <div class="name">Zero-dep CLI</div>
+        <p class="desc">Node.js, no <code>ajv</code> / <code>zod</code>. <code>check</code>, <code>validate-schema</code>, <code>ac-chain</code>, <code>dry-run</code>.</p>
+      </div>
+      <div class="layout-card">
+        <div class="icon">impl/openclaw-plugin/</div>
+        <div class="name">OpenClaw plugin</div>
+        <p class="desc">12 src files + 10 test files. Enforces HR1/HR5/HR6 in enforce mode at runtime.</p>
+      </div>
+      <div class="layout-card">
+        <div class="icon">scenarios/</div>
+        <div class="name">2 YAML</div>
+        <p class="desc">End-to-end dry-run scenarios. basic dispatch + multi-turn AC chain.</p>
+      </div>
+      <div class="layout-card">
+        <div class="icon">docs/</div>
+        <div class="name">8 maintainability docs</div>
+        <p class="desc">architecture, maintainability, known-limitations, post-install-procedures + 4 design notes.</p>
+      </div>
+      <div class="layout-card">
+        <div class="icon">INSTALL.md</div>
+        <div class="name">3-step install</div>
+        <p class="desc">Zero <code>npm install -g</code>, zero PATH change, no Hermes / OpenClaw prod pollution.</p>
+      </div>
+    </div>
+
+    <h2>Status (v0.1 ships as one-shot)</h2>
+    <div class="status">
+      <div class="title">v0.1.0 ship state — 2026-08-22</div>
+      <div class="grid">
+        <div class="item"><span class="label">Plugin on prod</span><span class="value">18789 (PID verified)</span></div>
+        <div class="item"><span class="label">Plugins loaded</span><span class="value">5 / 5</span></div>
+        <div class="item"><span class="label">Unit tests</span><span class="value">166 / 166</span></div>
+        <div class="item"><span class="label">End-to-end</span><span class="value">5 / 7 PASS + 2 / 7 BLOCK (correct)</span></div>
+        <div class="item"><span class="label">Mode</span><span class="value">enforce (<code>dryRun: false</code>)</span></div>
+        <div class="item"><span class="label">Design intent</span><span class="value">confirmed (user 10:40)</span></div>
+        <div class="item"><span class="label">Work sessions</span><span class="value">151 (bootstrap)</span></div>
+        <div class="item"><span class="label">v0.2</span><span class="value">does not exist (one-shot)</span></div>
+      </div>
+    </div>
+
+    <h2>Strategic design intent (user拍板)</h2>
+    <ul>
+      <li><strong>One-shot</strong>: v0.1 is a one-shot protocol layer. No v0.2 (user explicit 9/22 9:48).</li>
+      <li><strong>Enforce mode</strong>: <code>dryRun: false</code> (user 6/22 06:09). No shadow mode shipped.</li>
+      <li><strong>Strategic scope = agent↔agent</strong>: HR1/5/6 enforced at runtime. HR2/3/9 dormant (B方案 user拍板 7/14).</li>
+      <li><strong>Cross-agent-to-work blocked</strong>: Kelsen.bus → coder.work is anti-pattern (user architectural critique 9/22 9:21).</li>
+      <li><strong>v1.1 compat dropped</strong>: Coder must migrate to v0.1 format (user 6/14).</li>
+    </ul>
+
+    <h2>Quick start</h2>
+    <pre><code># Clone
+git clone https://github.com/Hulker309/peer-contract-v0.1
+cd peer-contract-v0.1
+
+# Validate a dispatch envelope
+node impl/cli/bin/peer-contract.js check impl/cli/tests/test-envelope-ok.json
+# Expected: OK envelope valid, exit 0
+
+# Run scenarios
+node impl/cli/bin/peer-contract.js dry-run scenarios/01-basic-dispatch.yaml --reset-state
+
+# Run all tests
+npm test
+# Expected: peer-contract 0.1.0 / OK envelope valid / 166 tests pass</code></pre>
+
+    <h2>Install on OpenClaw</h2>
+    <p>See <a href="INSTALL.md">INSTALL.md</a> for the verified 3-step install on OpenClaw 0.7.1+. Zero <code>npm install -g</code>, zero PATH change, no pollution of other software.</p>
+
+    <div class="footer">
+      <p>
+        <a href="https://github.com/Hulker309/peer-contract-v0.1">View on GitHub</a> ·
+        <a href="README.md">README</a> ·
+        <a href="INSTALL.md">INSTALL</a> ·
+        <a href="docs/maintainability.md">Maintainability</a> ·
+        <a href="docs/known-limitations.md">Known limitations</a>
+      </p>
+      <p>peer-contract v0.1.0 · MIT license · ship date 2026-08-22</p>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default', securityLevel: 'loose' });
+  </script>
+</body>
+</html>

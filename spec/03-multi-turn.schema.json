@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://peer-contract.v0.1/spec/03-multi-turn.schema.json",
+  "title": "peer-contract v0.1 - Multi-turn Sub-session Collaboration",
+  "description": "Multi-turn collaboration: sub-session lifecycle, acceptance criteria (AC) chain, yield patterns. Solves core problem #3 (multi-turn collaboration) - complex tasks need multi-round sub-sessions, not single-shot subagent.",
+  "type": "object",
+  "required": ["lifecycle", "yield_pattern"],
+  "additionalProperties": false,
+  "properties": {
+    "lifecycle": {
+      "type": "string",
+      "enum": ["spawn_request", "active", "yielded", "completed", "cancelled"],
+      "description": "Current lifecycle state of this sub-session or collaboration."
+    },
+    "yield_pattern": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Expected state transitions. First element is initial state. Each subsequent element is a valid next state.",
+      "items": {
+        "type": "string",
+        "enum": ["pending", "accepted", "in_progress", "yielded", "completed", "rejected", "cancelled"]
+      },
+      "examples": [
+        ["pending", "accepted", "in_progress", "yielded", "completed"]
+      ]
+    },
+    "sub_session_request": {
+      "type": "object",
+      "description": "If this is a spawn request (lifecycle=spawn_request), details for the new sub-session.",
+      "additionalProperties": false,
+      "required": ["task_id", "parent_session_key", "expected_yield"],
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-\\.]+$",
+          "description": "Task identifier. Used to group dispatches under one task and tie AC chain."
+        },
+        "parent_session_key": {
+          "type": "string",
+          "pattern": "^agent:[^:]+:(main|bus|work)(:[^:]+)*$",
+          "description": "Spawning session. Work session's parent must be the dispatcher. HR2 enforces."
+        },
+        "expected_yield": {
+          "type": "string",
+          "enum": ["single_yield", "multi_yield", "incremental", "final_only"],
+          "description": "Yield expectation. single_yield = one report back, done. multi_yield = periodic reports + final. incremental = each step is a yield. final_only = no reports until done."
+        },
+        "tool_allowlist": {
+          "type": "array",
+          "description": "Optional. If set, sub-session tool set is restricted to this list. Default = work session tool policy (see HR9).",
+          "items": { "type": "string" }
+        },
+        "yield_target": {
+          "type": "string",
+          "pattern": "^agent:[^:]+:(main|bus|work):[^:]+(:[^:]+)*$",
+          "description": "Where to send yields. Default = parent_session_key."
+        }
+      }
+    },
+    "acceptance_criteria": {
+      "type": "object",
+      "description": "AC for this task. Once accepted, certain fields are immutable (see HR7).",
+      "additionalProperties": false,
+      "required": ["card_id", "criteria_text", "status"],
+      "properties": {
+        "card_id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-\\.]+$",
+          "description": "Unique AC identifier. Tied to task_id. Reference this in ac_chain."
+        },
+        "criteria_text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "description": "Human-readable description of what acceptance means. Once accepted (status=accepted), this field is immutable for the worker (HR7)."
+        },
+        "accepted_by": {
+          "type": "string",
+          "description": "Session key that accepted. Set on first transition to status=accepted. IMMUTABLE after first set (HR7)."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "accepted", "in_progress", "completed", "rejected"],
+          "description": "AC status. Worker can transition: accepted → in_progress → completed/rejected. Cannot revert. Cannot extend ac_chain (HR7)."
+        },
+        "evidence_dispatch_ids": {
+          "type": "array",
+          "items": { "type": "string", "format": "uuid" },
+          "description": "Optional. Dispatch IDs that constitute evidence of completion. Set when status=completed."
+        }
+      }
+    },
+    "ac_chain": {
+      "type": "array",
+      "description": "Acceptance chain - sequence of AC nodes. Each worker can only add to their own AC; cannot modify other workers' ACs (HR7).",
+      "items": {
+        "type": "object",
+        "required": ["card_id", "owner_session_key", "status"],
+        "properties": {
+          "card_id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-\\.]+$" },
+          "owner_session_key": {
+            "type": "string",
+            "pattern": "^agent:[^:]+:(main|bus|work)(:[^:]+)*$",
+            "description": "Session that owns this AC. Can only be modified by owner. Other sessions get read-only access."
+          },
+          "status": { "type": "string", "enum": ["pending", "accepted", "in_progress", "completed", "rejected"] },
+          "immutable_after_accept": {
+            "type": "boolean",
+            "default": true,
+            "description": "If true, this AC node is immutable once status=accepted. HR7 enforces."
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "lifecycle": "spawn_request",
+      "yield_pattern": ["pending", "accepted", "in_progress", "yielded", "completed"],
+      "sub_session_request": {
+        "task_id": "task-123",
+        "parent_session_key": "agent:peer-trial:main",
+        "expected_yield": "multi_yield"
+      }
+    },
+    {
+      "lifecycle": "active",
+      "yield_pattern": ["pending", "accepted", "in_progress", "yielded", "completed"],
+      "acceptance_criteria": {
+        "card_id": "task-123.ac1",
+        "criteria_text": "Plugin src has all 9 HR enforced and tests pass",
+        "status": "accepted",
+        "accepted_by": "agent:peer-trial:main"
+      }
+    }
+  ]
+}

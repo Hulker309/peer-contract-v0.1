@@ -1,0 +1,82 @@
+# Scenario 02: Multi-turn AC Chain
+# Tests: full lifecycle - main spawns work, work accepts, advances, yields back, AC chain immutability
+# Expected: 8 OK + 1 BLOCK (HR7 modification attempt)
+name: Multi-turn AC Chain
+description: |
+  End-to-end test of multi-turn sub-session collaboration with AC chain.
+  Verifies: spawn → accept → in_progress → yielded → completed,
+  plus HR7 (AC immutability after accept) catches the modification attempt.
+
+steps:
+  - label: Main spawns work session
+    action: envelope_check
+    envelope:
+      version: "0.1.0"
+      envelope_id: "22222222-aaaa-bbbb-cccc-dddddddddddd"
+      routing:
+        dispatch_id: "22222222-aaaa-bbbb-cccc-dddddddddddd"
+        dialog_key: "scenario.02.multi-turn"
+        source_session_key: "agent:peer-trial:main"
+        target_session_key: "agent:peer-trial:work:task-02:primary"
+        source_role: "main"
+        target_role: "work"
+        timestamp: "2026-08-22T04:10:00.000Z"
+        intent: "task_assignment"
+      isolation:
+        context_scope: "self"
+        payload_self_contained: true
+        cross_session_query_ack: false
+        context_leak_protection: "strict"
+      multi_turn:
+        lifecycle: "spawn_request"
+        yield_pattern: ["pending", "accepted", "in_progress", "yielded", "completed"]
+        sub_session_request:
+          task_id: "task-02"
+          parent_session_key: "agent:peer-trial:main"
+          expected_yield: "multi_yield"
+        acceptance_criteria:
+          card_id: "task-02.ac1"
+          criteria_text: "Implement + verify all 9 HR rules end-to-end"
+          status: "pending"
+      bus:
+        coordination_kind: "task_assignment"
+        task_assignment:
+          task_id: "task-02"
+          assign_to: "agent:peer-trial:work:task-02:primary"
+          expected_completion: "2026-08-22T08:00:00.000Z"
+        bus_session_required: true
+      body:
+        task: "9 HR end-to-end verification with real tool calls"
+      size_cap:
+        max_bytes: 65536
+        current_bytes: 1450
+
+  - label: Work accepts AC
+    action: ac_accept
+    card_id: "task-02.ac1"
+    owner_session_key: "agent:peer-trial:work:task-02:primary"
+
+  - label: AC advances pending → in_progress
+    action: ac_advance
+    card_id: "task-02.ac1"
+    owner_session_key: "agent:peer-trial:work:task-02:primary"
+    to_status: "in_progress"
+
+  - label: Work yields back to bus (work→bus ok)
+    action: multi_turn_yield
+
+  - label: Work advances to completed
+    action: ac_advance
+    card_id: "task-02.ac1"
+    owner_session_key: "agent:peer-trial:work:task-02:primary"
+    to_status: "completed"
+
+  - label: HR7 BLOCK attempt - try to change owner of completed AC
+    action: ac_chain_attempt_modify
+    card_id: "task-02.ac1"
+    new_owner: "agent:other-agent:main"
+    halt_on_block: false
+
+  - label: HR9 check - work session denied message tool
+    action: hr9_check
+    work_session_tools: ["read", "exec", "message", "sessions_send"]

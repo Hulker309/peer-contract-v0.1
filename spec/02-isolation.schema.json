@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://peer-contract.v0.1/spec/02-isolation.schema.json",
+  "title": "peer-contract v0.1 - Session Isolation",
+  "description": "Session isolation envelope. Solves core problem #2 (session isolation) - SA1/SA2 are same agent A but different sessions, context must NOT leak. All cross-session interactions must be explicit.",
+  "type": "object",
+  "required": ["context_scope", "payload_self_contained", "cross_session_query_ack", "context_leak_protection"],
+  "additionalProperties": false,
+  "properties": {
+    "context_scope": {
+      "type": "string",
+      "enum": ["self", "explicit_query"],
+      "description": "self = payload only references the dispatcher's own context. explicit_query = payload references other sessions, requires cross_session_query_ack=true."
+    },
+    "payload_self_contained": {
+      "type": "boolean",
+      "description": "HR4: true = payload contains all data needed (no external lookup required). false = payload has need_lookup references - only allowed if context_scope=explicit_query AND cross_session_query_ack=true."
+    },
+    "cross_session_query_ack": {
+      "type": "boolean",
+      "description": "Sender explicitly acknowledges this dispatch will trigger cross-session query (sessions_history, memory_search). HR5 audit log will record. Must be true if context_scope=explicit_query."
+    },
+    "context_leak_protection": {
+      "type": "string",
+      "enum": ["strict", "narrowed", "open"],
+      "default": "strict",
+      "description": "strict = recipient may NOT include dispatcher context in any reply. narrowed = recipient may include dispatcher context only in same dialog_key replies. open = no restriction. Default strict."
+    },
+    "context_share_policy": {
+      "type": "object",
+      "description": "Optional. If set, narrows which context the recipient may use.",
+      "additionalProperties": false,
+      "properties": {
+        "allow_session_keys": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^agent:[^:]+:(main|bus|work):[^:]+(:[^:]+)*$" },
+          "description": "Whitelist of session keys whose context recipient may reference. Empty array = no other sessions."
+        },
+        "deny_session_keys": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^agent:[^:]+:(main|bus|work):[^:]+(:[^:]+)*$" },
+          "description": "Blacklist of session keys whose context recipient must NOT reference."
+        },
+        "allow_references": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["dispatch_id", "dialog_key", "ac_chain", "context_summary"] },
+          "description": "Which reference types are allowed: dispatch_id (point to specific dispatch), dialog_key (whole conversation), ac_chain (acceptance chain), context_summary (caller-provided digest)."
+        }
+      }
+    },
+    "ttl_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400,
+      "description": "Optional. How long recipient may cache/use this context. 0 = use once. Default 3600."
+    }
+  },
+  "allOf": [
+    {
+      "description": "Cross-field invariants",
+      "if": {
+        "properties": { "context_scope": { "const": "explicit_query" } }
+      },
+      "then": {
+        "required": ["cross_session_query_ack"],
+        "properties": { "cross_session_query_ack": { "const": true } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "payload_self_contained": { "const": false } }
+      },
+      "then": {
+        "description": "If payload needs external lookup, must be explicit_query + ack",
+        "required": ["cross_session_query_ack"],
+        "properties": {
+          "context_scope": { "const": "explicit_query" },
+          "cross_session_query_ack": { "const": true }
+        }
+      }
+    }
+  ],
+  "examples": [
+    {
+      "context_scope": "self",
+      "payload_self_contained": true,
+      "cross_session_query_ack": false,
+      "context_leak_protection": "strict"
+    },
+    {
+      "context_scope": "explicit_query",
+      "payload_self_contained": false,
+      "cross_session_query_ack": true,
+      "context_leak_protection": "narrowed",
+      "context_share_policy": {
+        "allow_references": ["dispatch_id", "ac_chain"]
+      }
+    }
+  ]
+}
