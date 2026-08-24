@@ -21,13 +21,13 @@
     },
     "source_session_key": {
       "type": "string",
-      "pattern": "^agent:[^:]+:(main|bus|work)(:[^:]+)*$",
-      "description": "Sender session key. Must be a valid session key. Plugin/runtime uses this to infer sender_role (cross-checked against source_role claim)."
+      "pattern": "^agent:[^:]+:(main|work)(:[^:]+)*$|^agent:[^:]+:bus:[^:]+(:[^:]+)*$",
+      "description": "Sender session key. Must be a valid session key. Bus session keys MUST include a non-empty context-id segment (e.g. agent:<id>:bus:dashboard); bare agent:<id>:bus is rejected. Plugin/runtime uses this to infer sender_role (cross-checked against source_role claim)."
     },
     "target_session_key": {
       "type": "string",
-      "pattern": "^agent:[^:]+:(main|bus|work)(:[^:]+)*$",
-      "description": "Recipient session key. REQUIRED, no default. HR1 (no-default-to-main) and HR6 (session existence) enforced against this field."
+      "pattern": "^agent:[^:]+:(main|work)(:[^:]+)*$|^agent:[^:]+:bus:[^:]+(:[^:]+)*$",
+      "description": "Recipient session key. REQUIRED, no default. HR1 (no-default-to-main), HR5.1 (bus-context-required), and HR6 (session existence) enforced against this field. Bus session keys MUST include a non-empty context-id segment; bare agent:<id>:bus is rejected."
     },
     "source_role": {
       "type": "string",
@@ -53,6 +53,22 @@
       "type": "string",
       "format": "uuid",
       "description": "If this dispatch is a reply, points to the dispatch_id of the original. Forms the conversation tree."
+    },
+    "parent_task_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Day 8 v2 (2026-08-24, 老板 10:50 '结合 workboard'): Optional. If this dispatch depends on a prior task completing, set this to the **workboard card id** of the parent task. The peer-contract-enforcer plugin validates the UUID format (HR10 schema-only check). The actual dependency-graph enforcement (waiting for parent in 'done' status before child can be dispatched) is the workboard plugin's responsibility — wire up the edge via `workboard linkCards(parentCardId, childCardId)`. Use `workboard API createCard(...)` to make a card, get its id, then put that id here.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "target_session_keys": {
+      "type": "array",
+      "description": "Day 8 v2 (2026-08-24, 老板 10:50 '结合 workboard'): Optional. Multi-target fan-out (broadcast to N targets in a single dispatch). Mutually exclusive with `target_session_key` (use one or the other). Each entry must satisfy HR5.1 bus-context-required (bare `agent:<id>:bus` is rejected). Use this for 1-to-N broadcast; for 1-to-1 dispatch use `target_session_key`.",
+      "items": {
+        "type": "string",
+        "pattern": "^agent:[^:]+:(main|work)(:[^:]+)*$|^agent:[^:]+:bus:[^:]+(:[^:]+)*$"
+      },
+      "minItems": 1,
+      "maxItems": 50
     }
   },
   "allOf": [
@@ -91,6 +107,24 @@
         "properties": {
           "target_session_key": { "pattern": "^agent:[^:]+:bus(:.*)?$|^agent:[^:]+:work(:.*)?$" }
         }
+      }
+    },
+    {
+      "description": "Day 8 v2 (2026-08-24): target_session_key and target_session_keys are mutually exclusive. Use single (1:1) or array (1:N fan-out) but not both.",
+      "if": {
+        "required": ["target_session_keys"]
+      },
+      "then": {
+        "not": { "required": ["target_session_key"] }
+      }
+    },
+    {
+      "description": "Day 8 v2 (2026-08-24): if target_session_keys is set, target_role MUST be 'bus' (multi-target fan-out only makes sense for bus coordination broadcasts).",
+      "if": {
+        "required": ["target_session_keys"]
+      },
+      "then": {
+        "properties": { "target_role": { "const": "bus" } }
       }
     }
   ],

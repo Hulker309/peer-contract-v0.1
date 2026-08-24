@@ -1,0 +1,324 @@
+// Day 8 (2026-08-24, 老板 10:33 followup): HR10 task-dependency + HR5.1 multi-target
+// unit tests. Validates:
+//   - validateTaskDependency (HR10): parent_task_id → BLOCK if unknown / pending / failed
+//   - validateMultiTargetBusContext (HR5.1 multi): array of bus keys → BLOCK if any
+//     bus key is missing context-id; ALLOW if all are per-context
+//   - createTaskRegistry: register / updateState / getState / has / size / entries
+//   - validateDispatchSchema integration: parent_task_id and target_session_keys flow
+//     through Step 5.2 and Step 5.3, errors are surfaced with HR10 / HR5 reason codes.
+
+import { test, reset, assertEq, makeValidV2Dispatch } from "./_helpers.mjs";
+import {
+  validateTaskDependency,
+  validateMultiTargetBusContext,
+  validateDispatchSchema,
+} from "../src/dispatch-schema.js";
+import { createTaskRegistry } from "../src/task-registry.js";
+
+let total = 0;
+function t(name, fn) { test(name, fn); total++; }
+
+reset();
+
+// ───────────────────── createTaskRegistry unit ─────────────────────
+
+console.log("\n# createTaskRegistry");
+
+t("register creates pending task", () => {
+  const r = createTaskRegistry();
+  r.register("task-A", null);
+  assertEq(r.getState("task-A"), "pending");
+  assertEq(r.has("task-A"), true);
+  assertEq(r.size(), 1);
+});
+
+t("register with parent", () => {
+  const r = createTaskRegistry();
+  r.register("task-B", "task-A");
+  assertEq(r.get("task-B").parentTaskId, "task-A");
+});
+
+t("updateState pending → completed", () => {
+  const r = createTaskRegistry();
+  r.register("task-C");
+  assertEq(r.updateState("task-C", "completed"), true);
+  assertEq(r.getState("task-C"), "completed");
+});
+
+t("updateState auto-registers unknown task", () => {
+  const r = createTaskRegistry();
+  assertEq(r.has("task-D"), false);
+  r.updateState("task-D", "completed", { source: "yield_report" });
+  assertEq(r.has("task-D"), true);
+  assertEq(r.getState("task-D"), "completed");
+});
+
+t("updateState rejects invalid state", () => {
+  const r = createTaskRegistry();
+  r.register("task-E");
+  assertEq(r.updateState("task-E", "nonsense"), false);
+  assertEq(r.getState("task-E"), "pending");
+});
+
+t("updateState idempotent on same state", () => {
+  const r = createTaskRegistry();
+  r.register("task-F");
+  r.updateState("task-F", "completed");
+  const before = r.get("task-F");
+  r.updateState("task-F", "completed");
+  const after = r.get("task-F");
+  assertEq(after.state, "completed");
+  // updatedAt is preserved on no-op (idempotent re-apply is a no-op, not a re-stamp)
+  assertEq(after.updatedAt, before.updatedAt);
+});
+
+t("register is idempotent — refresh parent if missing", () => {
+  const r = createTaskRegistry();
+  r.register("task-G");
+  assertEq(r.get("task-G").parentTaskId, null);
+  r.register("task-G", "task-F"); // now provides parent
+  assertEq(r.get("task-G").parentTaskId, "task-F");
+});
+
+// ───────────────────── validateTaskDependency (HR10) ─────────────────────
+
+console.log("\n# validateTaskDependency (HR10)");
+
+t("no parent_task_id → no error (no dependency declared)", () => {
+  const r = createTaskRegistry();
+  const errs = validateTaskDependency(undefined, r);
+  assertEq(errs.length, 0);
+});
+
+t("unknown parent_task_id → BLOCK (parent_task_unknown)", () => {
+  const r = createTaskRegistry();
+  const errs = validateTaskDependency("never-dispatched", r);
+  assertEq(errs.length, 1);
+  assertEq(errs[0].hr, "HR10");
+  assertEq(errs[0].reason, "parent_task_unknown");
+});
+
+t("pending parent → BLOCK (parent_task_not_completed)", () => {
+  const r = createTaskRegistry();
+  r.register("parent-pending");
+  const errs = validateTaskDependency("parent-pending", r);
+  assertEq(errs.length, 1);
+  assertEq(errs[0].reason, "parent_task_not_completed");
+  assertEq(errs[0].message.includes("pending"), true);
+});
+
+t("failed parent → BLOCK", () => {
+  const r = createTaskRegistry();
+  r.register("parent-failed");
+  r.updateState("parent-failed", "failed");
+  const errs = validateTaskDependency("parent-failed", r);
+  assertEq(errs.length, 1);
+  assertEq(errs[0].reason, "parent_task_not_completed");
+  assertEq(errs[0].message.includes("failed"), true);
+});
+
+t("cancelled parent → BLOCK", () => {
+  const r = createTaskRegistry();
+  r.register("parent-cancelled");
+  r.updateState("parent-cancelled", "cancelled");
+  const errs = validateTaskDependency("parent-cancelled", r);
+  assertEq(errs.length, 1);
+  assertEq(errs[0].reason, "parent_task_not_completed");
+});
+
+t("completed parent → ALLOW", () => {
+  const r = createTaskRegistry();
+  r.register("parent-done");
+  r.updateState("parent-done", "completed");
+  const errs = validateTaskDependency("parent-done", r);
+  assertEq(errs.length, 0);
+});
+
+t("parent_task_id declared but no taskRegistry → BLOCK (task_registry_unavailable)", () => {
+  const errs = validateTaskDependency("any-id", undefined);
+  assertEq(errs.length, 1);
+  assertEq(errs[0].reason, "task_registry_unavailable");
+});
+
+t("parent_task_id declared but taskRegistry lacks get() method → BLOCK", () => {
+  const errs = validateTaskDependency("any-id", { /* missing get() */ });
+  assertEq(errs.length, 1);
+  assertEq(errs[0].reason, "task_registry_unavailable");
+});
+
+// ───────────────────── validateMultiTargetBusContext (HR5.1 multi) ─────────────────────
+
+console.log("\n# validateMultiTargetBusContext (HR5.1 multi)");
+
+t("empty array → no error", () => {
+  const errs = validateMultiTargetBusContext([], {});
+  assertEq(errs.length, 0);
+});
+
+t("undefined → no error (multi-target not used)", () => {
+  const errs = validateMultiTargetBusContext(undefined, {});
+  assertEq(errs.length, 0);
+});
+
+t("non-array → no error (not multi-target)", () => {
+  const errs = validateMultiTargetBusContext("not-an-array", {});
+  assertEq(errs.length, 0);
+});
+
+t("all per-context bus keys → ALLOW", () => {
+  const errs = validateMultiTargetBusContext([
+    "agent:image-artist:bus:webchat:user-boss",
+    "agent:game-lead:bus:coordination",
+    "agent:db-maintainer:bus:archive",
+  ], {});
+  assertEq(errs.length, 0);
+});
+
+t("any bare bus key in array → BLOCK that one", () => {
+  const errs = validateMultiTargetBusContext([
+    "agent:image-artist:bus:webchat:user-boss",
+    "agent:game-lead:bus",  // bare — should BLOCK
+    "agent:db-maintainer:bus:archive",
+  ], {});
+  assertEq(errs.length, 1);
+  assertEq(errs[0].hr, "HR5");
+  assertEq(errs[0].reason, "bus_context_required_multi");
+  assertEq(errs[0].field, "target_session_keys[1]");
+  assertEq(errs[0].message.includes("agent:game-lead:bus"), true);
+});
+
+t("multiple bare bus keys → BLOCK each", () => {
+  const errs = validateMultiTargetBusContext([
+    "agent:game-lead:bus",
+    "agent:db-maintainer:bus",
+  ], {});
+  assertEq(errs.length, 2);
+  assertEq(errs[0].field, "target_session_keys[0]");
+  assertEq(errs[1].field, "target_session_keys[1]");
+});
+
+t("non-string entry → BLOCK (multi_target_session_keys_invalid)", () => {
+  const errs = validateMultiTargetBusContext([
+    "agent:image-artist:bus:webchat:user-boss",
+    42,  // not a string
+  ], {});
+  assertEq(errs.length, 1);
+  assertEq(errs[0].reason, "multi_target_session_keys_invalid");
+  assertEq(errs[0].field, "target_session_keys[1]");
+});
+
+t("non-bus keys in array (work/main) → leave to other validators (no HR5.1 multi error)", () => {
+  const errs = validateMultiTargetBusContext([
+    "agent:modeler:work:task-X",
+    "agent:main:main",  // main can be bare
+  ], {});
+  assertEq(errs.length, 0);
+});
+
+t("busContextRequired: false opt-out → ALLOW bare bus keys", () => {
+  const errs = validateMultiTargetBusContext([
+    "agent:game-lead:bus",
+    "agent:db-maintainer:bus",
+  ], { busContextRequired: false });
+  assertEq(errs.length, 0);
+});
+
+// ───────────────────── validateDispatchSchema integration ─────────────────────
+
+console.log("\n# validateDispatchSchema integration: parent_task_id + target_session_keys");
+
+const sessionReg = {
+  validateSessionKey: () => ({ valid: true, reason: "mock" }),
+};
+const baseDeps = {
+  sessionRegistry: sessionReg,
+  payloadSizeCapBytes: 65536,
+  mainIntentsAllowlist: ["inform","query","sub-task","response","ack","ping"],
+  crossAgentToWorkBlocked: true,
+  workSessionKeyPattern: /^agent:[^:]+:(work|run)(:.*)?$/,
+  busContextRequired: true,
+  busSessionKeyPattern: /^agent:[^:]+:bus:.+$/,
+  taskRegistry: null,
+};
+
+t("payload.parent_task_id flows through Step 5.2 — unknown parent → HR10 BLOCK", () => {
+  const r = createTaskRegistry();
+  const p = makeValidV2Dispatch({
+    target_role: "work",
+    target_session_key: "agent:coder:work:task-X:primary:y",
+    sender_session_key: "agent:main:main",
+    parent_task_id: "ghost-task-never-ran",
+  });
+  const result = validateDispatchSchema(p, { sessionKey: "agent:main:main" }, { ...baseDeps, taskRegistry: r });
+  const hr10 = result.errors.find((e) => e.hr === "HR10");
+  if (!hr10) throw new Error(`expected HR10, got: ${JSON.stringify(result.errors)}`);
+  assertEq(hr10.reason, "parent_task_unknown");
+});
+
+t("payload.bus.task_assignment.parent_task_id flows through Step 5.2 — completed parent → ALLOW", () => {
+  const r = createTaskRegistry();
+  r.register("parent-bus-done");
+  r.updateState("parent-bus-done", "completed");
+  const p = makeValidV2Dispatch({
+    target_role: "work",
+    target_session_key: "agent:coder:work:task-X:primary:y",
+    sender_session_key: "agent:main:main",
+    bus: {
+      coordination_kind: "task_assignment",
+      task_assignment: {
+        task_id: "child-task-X",
+        parent_task_id: "parent-bus-done",
+        assign_to: "agent:coder:work:task-X:primary:y",
+        expected_completion: "2026-08-25T00:00:00.000Z",
+      },
+    },
+  });
+  const result = validateDispatchSchema(p, { sessionKey: "agent:main:main" }, { ...baseDeps, taskRegistry: r });
+  const hr10 = result.errors.find((e) => e.hr === "HR10");
+  if (hr10) throw new Error(`expected no HR10, got: ${JSON.stringify(result.errors)}`);
+});
+
+t("payload.target_session_keys array flows through Step 5.3 — bare in array → HR5 BLOCK", () => {
+  const p = makeValidV2Dispatch({
+    target_session_keys: [
+      "agent:image-artist:bus:webchat:user-boss",
+      "agent:game-lead:bus",  // bare
+    ],
+    sender_session_key: "agent:main:main",
+  });
+  const result = validateDispatchSchema(p, { sessionKey: "agent:main:main" }, baseDeps);
+  const hr5 = result.errors.find((e) => e.hr === "HR5" && e.reason === "bus_context_required_multi");
+  if (!hr5) throw new Error(`expected bus_context_required_multi, got: ${JSON.stringify(result.errors)}`);
+  assertEq(hr5.field, "target_session_keys[1]");
+});
+
+t("payload.target_session_keys all per-context → no HR5 multi error", () => {
+  const p = makeValidV2Dispatch({
+    target_session_keys: [
+      "agent:image-artist:bus:webchat:user-boss",
+      "agent:game-lead:bus:coordination",
+    ],
+    sender_session_key: "agent:main:main",
+  });
+  const result = validateDispatchSchema(p, { sessionKey: "agent:main:main" }, baseDeps);
+  const hr5 = result.errors.find((e) => e.hr === "HR5" && e.reason === "bus_context_required_multi");
+  if (hr5) throw new Error(`expected no HR5 multi, got: ${JSON.stringify(result.errors)}`);
+});
+
+t("parent_task_id flows even when not declared in payload.bus — top-level only", () => {
+  const r = createTaskRegistry();
+  r.register("parent-X");
+  r.updateState("parent-X", "completed");
+  // Put parent_task_id only at top level (routing), not in bus.task_assignment
+  const p = makeValidV2Dispatch({
+    target_role: "work",
+    target_session_key: "agent:coder:work:task-Y:primary:z",
+    sender_session_key: "agent:main:main",
+    parent_task_id: "parent-X",  // top-level routing
+  });
+  const result = validateDispatchSchema(p, { sessionKey: "agent:main:main" }, { ...baseDeps, taskRegistry: r });
+  const hr10 = result.errors.find((e) => e.hr === "HR10");
+  if (hr10) throw new Error(`expected no HR10, got: ${JSON.stringify(result.errors)}`);
+});
+
+console.log(`\n# total: ${total}`);

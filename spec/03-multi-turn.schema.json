@@ -37,8 +37,8 @@
         },
         "parent_session_key": {
           "type": "string",
-          "pattern": "^agent:[^:]+:(main|bus|work)(:[^:]+)*$",
-          "description": "Spawning session. Work session's parent must be the dispatcher. HR2 enforces."
+          "pattern": "^agent:[^:]+:(main|work)(:[^:]+)*$|^agent:[^:]+:bus:[^:]+(:[^:]+)*$",
+          "description": "Spawning session. Work session's parent must be the dispatcher. HR2 enforces. Bus session keys MUST include a non-empty context-id segment (HR5.1); bare agent:<id>:bus is rejected."
         },
         "expected_yield": {
           "type": "string",
@@ -53,7 +53,7 @@
         "yield_target": {
           "type": "string",
           "pattern": "^agent:[^:]+:(main|bus|work):[^:]+(:[^:]+)*$",
-          "description": "Where to send yields. Default = parent_session_key."
+          "description": "Where to send yields. Default = parent_session_key. All session keys require at least one non-empty segment after the role (main:foo / bus:foo / work:foo); bare main/bus/work without context is rejected."
         }
       }
     },
@@ -100,8 +100,8 @@
           "card_id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-\\.]+$" },
           "owner_session_key": {
             "type": "string",
-            "pattern": "^agent:[^:]+:(main|bus|work)(:[^:]+)*$",
-            "description": "Session that owns this AC. Can only be modified by owner. Other sessions get read-only access."
+            "pattern": "^agent:[^:]+:(main|work)(:[^:]+)*$|^agent:[^:]+:bus:[^:]+(:[^:]+)*$",
+            "description": "Session that owns this AC. Can only be modified by owner. Other sessions get read-only access. Bus session keys MUST include a non-empty context-id segment (HR5.1)."
           },
           "status": { "type": "string", "enum": ["pending", "accepted", "in_progress", "completed", "rejected"] },
           "immutable_after_accept": {

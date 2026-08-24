@@ -43,7 +43,22 @@ export function createWorkbenchPolicy(config) {
     // sessions. role-registry.js already accepted both; this aligns the policy.
     workSessionKeyPattern: new RegExp(config.workSessionKeyPattern ?? "^agent:[^:]+:(work|run)(:.*)?$"),
     // bus dispatchId may contain ':' (e.g. "agent:kelsen:bus:webchat:test"), so allow it via .+
-    busSessionKeyPattern: new RegExp(config.busSessionKeyPattern ?? "^agent:[^:]+:bus(:.*)?$"),
+    // Day 8 (2026-08-24, 老板 8/10 反馈): default now requires at least one non-empty context-id
+    // segment after `:bus:`. Bare `agent:<id>:bus` is no longer matched as a bus session; it falls
+    // through to the "unknown" role (conservative allow, see inferRole below). HR5.1
+    // (validateBusContextRequired) separately blocks bare bus *targets*. Both layers close the
+    // "shared inbox" hole. Operators that intentionally want a shared-inbox bus must set an
+    // explicit pattern via config.busSessionKeyPattern that accepts the bare form, AND set
+    // busContextRequired=false.
+    busSessionKeyPattern: new RegExp(config.busSessionKeyPattern ?? "^agent:[^:]+:bus:.+$"),
+    // Day 8 followup (Mavis 2026-08-24, 老板 8/10 反馈): HR5.1 bus-context-required.
+    // bus session key MUST include a context-id segment. Per-context bus is the
+    // v0.1 spec coordination-layer design (see docs/bus-coordination.md); a bare
+    // `agent:<id>:bus` collapses to a single shared inbox and reintroduces the
+    // main-session-style cross-task contamination that bus was designed to avoid.
+    // Default true. Operators that intentionally want a shared inbox must set
+    // busContextRequired=false explicitly (with a comment why).
+    busContextRequired: config.busContextRequired !== false, // default true
     // Day 6a followup: intent-aware HR1 + cross-agent-to-work block.
     mainIntentsAllowlist: Array.isArray(config.mainIntentsAllowlist)
       ? config.mainIntentsAllowlist

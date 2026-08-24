@@ -16,6 +16,8 @@ const testFiles = [
   'hr-e2e.test.mjs',
   'hr-day6a-followup.test.mjs',
   'role-registry-lifecycle.test.mjs',
+  'hr5_1-bus-context.test.mjs',           // Day 8: HR5.1 bus-context-required
+  'hr10-uuid-multitarget.test.mjs',       // Day 8 v2: HR10 UUID format + HR5.1 multi-target
 ];
 
 let totalPassed = 0;
@@ -32,7 +34,12 @@ for (const rel of testFiles) {
   if (r.status !== 0) {
     failedFiles.push(rel);
   }
-  // Parse pass/fail counts from "OK Passed: N" / "FAIL Failed: N" lines in output
+  // Parse pass/fail counts. Two formats are supported:
+  //   - "OK Passed: N / FAIL Failed: N" summary line (older test files)
+  //   - "total: N" / per-OK-line / per-FAIL-line (newer test files, e.g. hr5_1, hr10)
+  // We count both, then de-dupe to avoid double-counting in summary.
+
+  // 1) Look for the "OK Passed: N" summary lines (older format)
   const passedMatch = r.stdout.match(/OK Passed:\s*(\d+)/g);
   if (passedMatch) {
     for (const m of passedMatch) {
@@ -44,6 +51,20 @@ for (const rel of testFiles) {
     for (const m of failedMatch) {
       totalFailed += parseInt(m.match(/(\d+)/)[1], 10);
     }
+  }
+
+  // 2) Look for "total: N" lines (newer test files like hr5_1-bus-context, hr10-uuid-multitarget
+  //    use "OK <name>" / "FAIL <name>" / "# total: N" / "# pass: N fail: N" formats).
+  //    These count as pass + total asserts (not double-counted with the older "OK Passed" summary).
+  const totalMatch = r.stdout.match(/^\s*#\s*total:\s*(\d+)/m);
+  if (totalMatch) {
+    totalPassed += parseInt(totalMatch[1], 10);
+    totalAsserts += parseInt(totalMatch[1], 10);
+  }
+  const passFailMatch = r.stdout.match(/^\s*#\s*pass:\s*(\d+)\s+fail:\s*(\d+)/m);
+  if (passFailMatch) {
+    totalAsserts += parseInt(passFailMatch[1], 10);
+    totalFailed += parseInt(passFailMatch[2], 10);
   }
 }
 

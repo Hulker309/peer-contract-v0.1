@@ -34,12 +34,12 @@
         "allow_session_keys": {
           "type": "array",
           "items": { "type": "string", "pattern": "^agent:[^:]+:(main|bus|work):[^:]+(:[^:]+)*$" },
-          "description": "Whitelist of session keys whose context recipient may reference. Empty array = no other sessions."
+          "description": "Whitelist of session keys whose context recipient may reference. Empty array = no other sessions. Each key MUST include a non-empty context-id segment (e.g. agent:<id>:main:dashboard, agent:<id>:bus:dashboard, agent:<id>:work:card-x) — bare main/bus/work without context is rejected to avoid whole-agent over-grant."
         },
         "deny_session_keys": {
           "type": "array",
           "items": { "type": "string", "pattern": "^agent:[^:]+:(main|bus|work):[^:]+(:[^:]+)*$" },
-          "description": "Blacklist of session keys whose context recipient must NOT reference."
+          "description": "Blacklist of session keys whose context recipient must NOT reference. Same context-id requirement as allow_session_keys."
         },
         "allow_references": {
           "type": "array",

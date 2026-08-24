@@ -61,6 +61,11 @@ export default definePluginEntry({
       },
     });
     const acCache = createAcceptanceCriteriaCache();
+    // Day 8 v2 (2026-08-24, 老板 10:50 提示"结合 workboard"): task-registry
+    // REMOVED. Workboard is the source of truth for task lifecycle state.
+    // peer-contract-enforcer's HR10 only validates parent_task_id schema
+    // (UUID format = workboard card id). Actual dependency-graph enforcement
+    // is workboard's `linkCards` + `promoteReady` private methods.
     // Day 6a followup (Mavis 2026-08-22 08:25): per-agent audit log. Kelsen report 8/22 8:17
     // flagged that fixed filePath with `api?.config?.agentId ?? "coder"` always wrote to
     // coder dir regardless of actual caller. Fix: route per event.agentId so each agent

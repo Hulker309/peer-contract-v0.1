@@ -24,8 +24,14 @@
         },
         "assign_to": {
           "type": "string",
-          "pattern": "^agent:[^:]+:(main|bus|work)(:[^:]+)*$",
-          "description": "Target session key. Must be a work or main session (HR3: user-channel-originated → work blocked at runtime)."
+          "pattern": "^agent:[^:]+:(main|work)(:[^:]+)*$|^agent:[^:]+:bus:[^:]+(:[^:]+)*$",
+          "description": "Target session key. Must be a work or main session (HR3: user-channel-originated → work blocked at runtime). Bus session keys MUST include a non-empty context-id segment (HR5.1)."
+        },
+        "parent_task_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Day 8 v2 (2026-08-24, 老板 10:50 '结合 workboard'): Optional. Workboard card id of the parent task. The peer-contract-enforcer plugin validates the UUID format (HR10 schema-only check). Workboard's linkCards API + promoteReady private method enforce the actual dependency graph. If the parent card is not in 'done' status when the child card is dispatched, workboard will block at the workboard dispatch layer.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
         },
         "expected_completion": {
           "type": "string",
@@ -115,11 +121,21 @@
       "properties": {
         "scope": {
           "type": "string",
-          "enum": ["all_agents", "agents_in_dialog", "role_filter"]
+          "enum": ["all_agents", "agents_in_dialog", "role_filter", "explicit_target_session_keys"]
         },
         "role_filter": {
           "type": "array",
           "items": { "type": "string", "enum": ["main", "bus", "work"] }
+        },
+        "multi_target_session_keys": {
+          "type": "array",
+          "description": "Day 8 v2 (2026-08-24, 老板 10:50 '结合 workboard'): Optional. When scope=explicit_target_session_keys, this is the list of target session keys to broadcast to. Each entry must satisfy HR5.1 bus-context-required (bare `agent:<id>:bus` is rejected). Use this for 1-to-N fan-out to explicit per-context bus keys. Plugin v0.1 validates the array schema; actual delivery is the caller's responsibility (e.g. game-lead calls sessions_send N times, once per target).",
+          "items": {
+            "type": "string",
+            "pattern": "^agent:[^:]+:(main|work)(:[^:]+)*$|^agent:[^:]+:bus:[^:]+(:[^:]+)*$"
+          },
+          "minItems": 1,
+          "maxItems": 50
         }
       }
     }

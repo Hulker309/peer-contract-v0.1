@@ -1,7 +1,7 @@
 # peer-contract v0.1 — INSTALL
 
 > Verified install procedure for OpenClaw 0.7.1+ on Windows + PowerShell 5.1.
-> Author: Mavis (peer agent)  |  Last verified: 2026-08-22 11:20 GMT+8
+> Author: Mavis (peer agent)  |  Last verified: 2026-08-24 08:35 GMT+8 (Day 8)
 
 ## TL;DR
 
@@ -27,6 +27,11 @@ $oc.plugins.entries.'peer-contract-enforcer' = @{
         mainSessionKeyPattern   = '^agent:[^:]+:main(:.*)?$'
         workSessionKeyPattern   = '^agent:[^:]+:(work|run)(:.*)?$'
         busSessionKeyPattern    = '^agent:[^:]+:bus(:.*)?$'
+        # Day 8 (2026-08-24): HR5.1 bus-context-required. Default true.
+        # Bus target_session_key MUST include a context-id segment; bare
+        # `agent:<id>:bus` (no context) BLOCKED. Set false only for an
+        # explicit shared-inbox design.
+        busContextRequired      = $true
         mainIntentsAllowlist    = @('inform','query','sub-task','response','ack','ping')
         crossAgentToWorkBlocked = $true
     }
@@ -71,13 +76,39 @@ Once installed, the plugin hooks into OpenClaw's tool-call pipeline:
 
 | Hook | Fires on | Plugin behavior |
 |---|---|---|
-| `before_tool_call` | every tool call | Validates `sessions_send` envelopes against v0.1 schema + HR1/HR2/HR3/HR4/HR6/HR7/HR8/HR9 rules. Blocks with structured `blockReason` on violation. |
+| `before_tool_call` | every tool call | Validates `sessions_send` envelopes against v0.1 schema + HR1/HR2/HR3/HR4/HR5.1/HR6/HR7/HR8/HR9 rules. Blocks with structured `blockReason` on violation. |
 | `subagent_spawned` | new sub-session created | Registers the child session as a "work" role with `parentSessionKey` pointing to the dispatcher. |
 | `session_start` | any session opens | Populates role-registry, session-registry, agent-registry, with **inheritance from any pre-existing entry** (so `parentSessionKey` set by `subagent_spawned` survives). |
 | `session_end` | any session closes | Cleans up registries. |
 | `message_sending` | cross-session message | Appends to per-agent audit log (`peer-contract-enforcer-audit.jsonl`). |
 
 The full install record (3 blockers fixed, 8 fix iterations, 4 end-to-end bug rounds) is in `impl/openclaw-plugin/peer-contract-enforcer/INSTALL_NOTES.md`.
+
+## Day 8 followup (2026-08-24) — install workflow tightened
+
+Mavis 8/24 08:10 took a Kelsen 4-agent bootstrap install at face value during pre-flight + restart + verify, and only caught a spec simplification (bare `agent:<id>:bus` instead of `agent:<id>:bus:<context>`) when the user asked why bus collapses to a shared inbox. The plugin + tests already enforced per-context bus — the bootstrap was the one that didn't follow the spec, and Mavis missed it during install.
+
+**New install workflow** (apply this for any plugin install or agent-bootstrap handoff, not just peer-contract-enforcer):
+
+1. Pre-flight (config validate, file presence, JSON valid).
+2. **Source review** — read the spec the install is supposed to implement (e.g. `docs/bus-coordination.md` for bus, `docs/architecture.md` for the whole thing). Diff the install's bootstrap/dispatch code against the spec. Flag any simplification, missing flow, or default that contradicts the spec.
+3. Restart gateway.
+4. End-to-end verify (cross-hook data flow, not just unit tests).
+5. Self-test report (what PASS, what FAIL, what skipped).
+6. Rollback on any FAIL.
+
+**Spec entry points** for diffing:
+
+| Concern | Spec file |
+|---|---|
+| Bus coordination semantics + key shape | `docs/bus-coordination.md` |
+| Architecture + role model | `docs/architecture.md` |
+| Multi-turn patterns | `docs/multi-turn-patterns.md` |
+| Common plugin/agent pitfalls | `docs/common-blocks-and-fix.md` |
+| What is and isn't enforced | `docs/known-limitations.md` |
+| v0.1 §2.2 wire format | `spec/99-envelope.schema.json` + `spec/01-04-*.json` |
+
+When a bootstrap deviates from spec, **do not declare "loaded"**. Either fix the bootstrap, or escalate back to the bootstrap author (e.g. Kelsen) before resuming the install.
 
 ## Uninstall (rollback)
 
@@ -156,3 +187,66 @@ The plugin runs in OpenClaw's runtime. To trigger it:
 3. **Trigger HR6** (session-existence): call `sessions_send` with a `target_session_key` that doesn't exist. Expect: BLOCK with reason `target session '...' not found`.
 
 The audit log is the cleanest smoke test — if entries appear with your `agentId` and `correlationId`, the install is working end-to-end.
+
+## Day 8 v2 followup (2026-08-24) — workboard 集成
+
+**老板 10:50 提示**: peer-contract-enforcer 不应该自己造 task state — OpenClaw workboard 已经是 task lifecycle 的 source-of-truth。
+
+**Day 8 v2 设计变更**：
+- **HR10 (parent_task_id 校验)**: 之前 8/22 Day 8 v1 计划自己造 in-memory task-registry 跟踪 task 状态。**Day 8 v2 改为 schema-only 校验** —— `parent_task_id` 必是 UUID 格式（跟 workboard card_id 一致）。实际 dependency-graph 状态 enforce 由 workboard 的 `linkCards` + `promoteReady` private method 做。
+- **Task 生命周期不归 plugin 管** —— workboard 的 `done` / `running` / `blocked` / `todo` 等 status 是 source-of-truth。Plugin 不再调 updateState 推断。
+- **HR5.1 multi-target (Day 8 v2 新增)**: `target_session_keys` 数组（替代或补充 `target_session_key`）。每个 entry 必带 per-context bus id（与单 target HR5.1 一致）。Plugin 验证 schema，实际 fan-out 是 caller's 责任（业务层调 N 次 sessions_send）。
+
+**Wire format 变更**（spec/01-dispatch + 04-bus）：
+- `parent_task_id`: 新加 optional 字段，UUID format（workboard card id）
+- `target_session_keys`: 新加 optional 数组（multi-target broadcast），与 `target_session_key` 互斥
+- `04-bus.broadcast.scope` 加 `explicit_target_session_keys` enum + `multi_target_session_keys` 数组字段
+
+**Plugin 变更**（4 个 src 文件）：
+- `src/dispatch-schema.js`:
+  - `validateTaskDependency(parentTaskId)`: 改 schema-only (UUID format), 删 task-registry 依赖
+  - 新加 `validateMultiTargetBusContext(targetSessionKeys)`: 扩展 HR5.1 到数组
+  - `validateDispatchSchema` Step 5.2 / 5.3: 调新 validator
+- `src/tool-guard.js`:
+  - 删 task-registry 创建 (Day 8 v1 中间版, 改 Day 8 v2 删了)
+  - 删 yield_report / task_assignment 的 state update (workboard 自己做)
+- `src/index.js`:
+  - 删 `createTaskRegistry()` 创建 (跟 tool-guard 解耦)
+
+**Test 变更**:
+- 删 `tests/hr10-multi-target.test.mjs` (Day 8 v1 in-memory registry 版)
+- 新加 `tests/hr10-uuid-multitarget.test.mjs` (Day 8 v2 schema-only + multi-target)
+- 23 个新 test, 全 PASS; 全量 166/166 PASS
+
+**为什么这设计**:
+- **避免重复造轮子**: workboard 已经有 `taskId` / `linkCards` / `promoteReady` / `WORKBOARD_LINK_TYPES: ["parent", "child", "blocks", "blocked_by"]`，plugin 再造 task-registry 是 redundant。
+- **边界明确**: peer-contract-enforcer = message-shape enforcement; workboard = task-state tracking。两者通过 workboard card_id 协作，no overlap。
+- **leaner**: 删了 50 行 task-registry.js + 几十行 yield_report update 逻辑，plugin 代码更少。
+
+**业务层调用 pattern**（参见 4 agent AGENTS.md §6 "workboard 集成"）:
+```js
+// 1. 建 workboard card
+const card = await workboard.createCard({ title: "...", agentId: "modeler", status: "ready" });
+
+// 2. (可选) 建 dependency edge
+if (upstreamCardId) {
+  await workboard.linkCards(upstreamCardId, card.id);
+  // ↑ workboard 自动等 upstream 到 "done" 才 dispatch child
+}
+
+// 3. envelope 带 parent_task_id (workboard card id, 不是 "task-42" 之类)
+sessions_send(..., message={ bus: { task_assignment: { parent_task_id: upstreamCardId, ... } } });
+// plugin HR10: 验 UUID format ✓
+// workboard dispatch: 验 upstream 状态, 不到 done 则 block ✓
+```
+
+**如何 verify Day 8 v2**:
+```powershell
+# HR10 schema check: parent_task_id = non-UUID → BLOCK
+# HR10 schema check: parent_task_id = valid UUID → ALLOW
+# HR5.1 multi: target_session_keys 数组含 bare bus key → BLOCK that one
+
+cd C:\Users\Administrator\.openclaw\extensions\peer-contract-enforcer
+node tests\_run-all.js
+# Expect: Total OK Passed: 189 (166 prior + 23 new), Total FAIL Failed: 0
+```

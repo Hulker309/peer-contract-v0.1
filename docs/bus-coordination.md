@@ -241,7 +241,54 @@ A future "bus-policy" plugin could enforce bus-side rules (e.g. "work session ca
 ❌ **Bus session that "knows" task content**: Bus should track state, not interpret. Keep bus as routing layer, not semantic layer.
 ❌ **Long-lived yields without progress_sync**: Bus may think task is stuck. Always heartbeat at least every 5 min for long tasks.
 ❌ **Re-assigning mid-task without yield**: If you reassign a work session's task, the new worker has no context. The original worker should yield first, then bus can reassign.
+❌ **Bare `agent:<id>:bus` (no context)**: As of Day 8 (2026-08-24), HR5.1 in `peer-contract-enforcer` blocks any `target_session_key` with role=bus and no `context-id` segment. Use `agent:<id>:bus:<context>` per the spec — bare bus keys collapse to a single shared inbox and reintroduce main-session-style cross-task contamination that bus was designed to avoid.
 
 ---
+
+## Day 8 enforcement status (2026-08-24)
+
+The coordination semantics above (task_assignment / progress_sync / yield_report / ack / broadcast, plus the per-context bus key shape) have always been part of the v0.1 spec, but the plugin enforcement grew incrementally:
+
+| Spec concept | Plugin enforcement | Notes |
+|---|---|---|
+| `agent:<id>:bus:<context>` key shape | **Day 8 (HR5.1)** | Bare `agent:<id>:bus` now BLOCKED; opt-out `busContextRequired: false` |
+| `agent:<id>:work:<task>` / `:run:<task>` per-task work | Day 6a (HR1 cross-agent-to-work block + HR2 work→work BLOCK) | Work sessions can only talk to their parent bus (line 190-204 of `src/tool-guard.js`) |
+| Sender consistency (sender_session_key matches ctx) | Day 6a (sender is trusted from ctx) | Sender cross-check is non-blocking |
+| 5 coordination flow semantics | **not enforced at plugin layer** | Plugin routes dispatches and writes audit log; the *semantic* interpretation (is this a task_assignment or a yield_report?) is the bus session's own logic, not the plugin's. This is by design — the plugin is a routing+enforcement layer, not a workflow engine. |
+| Bus topology (which buses can talk to which) | not enforced | see `known-limitations.md` §6 — full topology graph is a v0.2 candidate |
+
+**Day 8 lesson recorded**: Mavis 8/24 08:10 took a Kelsen 8/24 bootstrap install (`agent:<id>:bus` single inbox) at face value during pre-flight + restart + verify, and only caught the simplification when the user asked why bus is a "shared inbox" instead of per-context. The new install procedure (see `INSTALL.md` §"Day 8 followup") adds a **source review** step that diffs any agent-bootstrap or dispatch code against this spec before declaring "loaded".
+
+## Day 8 v2 (2026-08-24, 老板 10:50 提示"结合 workboard") — task dependency + multi-target broadcast
+
+The Day 8 v1 design (Mavis 10:38 plan) proposed building an in-memory task-registry to enforce HR10 task-dependency. **The v2 redesign** (Mavis 10:50, after 老板 提示) defers all task state to OpenClaw's bundled workboard plugin:
+
+| Concern | Day 8 v1 (rejected) | Day 8 v2 (shipped) |
+|---|---|---|
+| Task state source-of-truth | plugin's in-memory task-registry | workboard card status (`done` / `running` / `blocked` / etc.) |
+| Dependency graph storage | plugin Map<taskId, {parent, state}> | workboard `linkCards(parent, child)` + `WORKBOARD_LINK_TYPES: ["parent", "child", "blocks", "blocked_by"]` |
+| HR10 enforcement | plugin checks parent.state === "completed" | plugin checks parent_task_id UUID format; workboard checks parent.status === "done" at dispatch time |
+| Multi-target broadcast | plugin fans out internally | plugin validates `target_session_keys` array schema; caller (e.g. game-lead) does N separate `sessions_send` calls |
+| Source of audit | plugin task-registry JSONL | workboard SQLite + peer-contract-enforcer audit JSONL (HR5) |
+
+**Why this redesign**: peer-contract-enforcer's v0.1 strategic scope is "agent↔agent message protocol", not "workflow engine". Workboard already provides task lifecycle + dependency enforcement. Building a parallel task-registry would be redundant state that drifts from the canonical source. **leaner wins**.
+
+**Wire format additions** (spec/01-dispatch + 04-bus):
+- `routing.parent_task_id` (UUID, optional): workboard card id of upstream dependency
+- `routing.target_session_keys` (array, optional): multi-target fan-out, mutually exclusive with `target_session_key`
+- `bus.broadcast.scope` enum: `all_agents` / `agents_in_dialog` / `role_filter` / `explicit_target_session_keys` (new)
+- `bus.broadcast.multi_target_session_keys` (array, optional): explicit list for the new scope value
+
+**Plugin additions** (4 src files):
+- `validateTaskDependency(parentTaskId)`: schema-only (UUID format). Helpful BLOCK message: "Use a workboard card id, e.g. '7f4a2c10-...'"
+- `validateMultiTargetBusContext(targetSessionKeys)`: HR5.1 extension — each array entry must have bus context-id
+- `validateDispatchSchema` Step 5.2 + 5.3: wire the two new validators
+
+**Plugin deletions** (vs Day 8 v1 intermediate):
+- `src/task-registry.js` — removed (workboard is source-of-truth)
+- yield_report / task_assignment state-update hooks in `tool-guard.js` — removed (workboard tracks this)
+- `createTaskRegistry` injection in `index.js` — removed
+
+**Tests**: 23 new (HR10 UUID format + HR5.1 multi-target) + 166 prior = 189 total, all PASS.
 
 _See also: `spec/04-bus.schema.json`, `scenarios/01-basic-dispatch.yaml`._

@@ -1,0 +1,137 @@
+// peer-contract-enforcer task state registry
+// Day 8 (2026-08-24, 老板 10:33 followup): HR10 task dependency enforcement.
+//
+// Tracks task lifecycle state across dispatches for dependency checks. When a
+// dispatch declares parent_task_id, the parent task must be in "completed"
+// state before this dispatch can proceed (otherwise BLOCK with HR10).
+//
+// State machine:
+//   pending  → completed   (via yield_report yield_status=final)
+//   pending  → failed      (via yield_report yield_status=error)
+//   pending  → cancelled   (via explicit cancel — reserved for future)
+//
+// Storage: in-memory Map. Restart survival deferred (task state is per-day;
+// full audit trail already in peer-contract-enforcer-audit.jsonl).
+// Future: persist to ~/.openclaw/agents/<id>/task-state.jsonl on update.
+
+const VALID_STATES = new Set(["pending", "completed", "failed", "cancelled"]);
+
+/**
+ * @typedef {Object} TaskRegistryEntry
+ * @property {string} taskId
+ * @property {string} [parentTaskId]
+ * @property {"pending" | "completed" | "failed" | "cancelled"} state
+ * @property {number} registeredAt — ms epoch
+ * @property {number} [updatedAt] — ms epoch
+ * @property {string} source — "manual" | "auto" | "yield_report" | "task_assignment" | ...
+ * @property {string} [agentId] — owning agent (if known)
+ * @property {string} [sessionKey] — owning session (if known)
+ */
+
+export function createTaskRegistry(opts = {}) {
+  /** @type {Map<string, TaskRegistryEntry>} */
+  const map = new Map();
+  const logger = opts.logger ?? ((msg, level = "info") => console[level]?.(msg) ?? console.log(msg));
+
+  return {
+    /**
+     * Register a new task (pending state). Idempotent: if taskId exists, refresh parentTaskId.
+     * @param {string} taskId
+     * @param {string} [parentTaskId]
+     * @param {Object} [info]
+     */
+    register(taskId, parentTaskId = null, info = {}) {
+      if (!taskId || typeof taskId !== "string") return;
+      const existing = map.get(taskId);
+      if (existing) {
+        // Refresh parent if provided and existing didn't have one
+        if (parentTaskId && !existing.parentTaskId) {
+          existing.parentTaskId = parentTaskId;
+        }
+        Object.assign(existing, info);
+        return existing;
+      }
+      /** @type {TaskRegistryEntry} */
+      const entry = {
+        taskId,
+        parentTaskId: parentTaskId ?? null,
+        state: info.state ?? "pending",
+        registeredAt: info.registeredAt ?? Date.now(),
+        source: info.source ?? "manual",
+        ...info,
+      };
+      map.set(taskId, entry);
+      logger(`[task-registry] register task='${taskId}' parent='${parentTaskId ?? "(none)"}' state=pending source=${entry.source}`, "info");
+      return entry;
+    },
+
+    /**
+     * Update task state. Validates state transition; auto-registers if not present.
+     * @param {string} taskId
+     * @param {"pending" | "completed" | "failed" | "cancelled"} newState
+     * @param {Object} [info]
+     * @returns {boolean} success
+     */
+    updateState(taskId, newState, info = {}) {
+      if (!taskId || typeof taskId !== "string") return false;
+      if (!VALID_STATES.has(newState)) {
+        logger(`[task-registry] updateState rejected invalid state '${newState}' for task='${taskId}'`, "warn");
+        return false;
+      }
+      const existing = map.get(taskId);
+      if (!existing) {
+        // Auto-register (caller didn't pre-register; common for yield_report
+        // arriving without a prior task_assignment dispatch)
+        map.set(taskId, {
+          taskId,
+          parentTaskId: null,
+          state: newState,
+          registeredAt: Date.now(),
+          updatedAt: Date.now(),
+          source: info.source ?? "auto",
+          ...info,
+        });
+        logger(`[task-registry] updateState auto-register task='${taskId}' state='${newState}' source=auto`, "info");
+        return true;
+      }
+      // Idempotent: same state, no-op
+      if (existing.state === newState) return true;
+      const oldState = existing.state;
+      existing.state = newState;
+      existing.updatedAt = Date.now();
+      Object.assign(existing, info);
+      logger(`[task-registry] updateState task='${taskId}' ${oldState} → ${newState} source=${info.source ?? "manual"}`, "info");
+      return true;
+    },
+
+    /**
+     * Get full task entry.
+     * @param {string} taskId
+     * @returns {TaskRegistryEntry | undefined}
+     */
+    get(taskId) { return map.get(taskId); },
+
+    /**
+     * Get just the state (convenience for hot path).
+     * @param {string} taskId
+     * @returns {"pending" | "completed" | "failed" | "cancelled" | undefined}
+     */
+    getState(taskId) { return map.get(taskId)?.state; },
+
+    /**
+     * @param {string} taskId
+     * @returns {boolean}
+     */
+    has(taskId) { return map.has(taskId); },
+
+    /**
+     * @returns {IterableIterator<[string, TaskRegistryEntry]>}
+     */
+    entries() { return map.entries(); },
+
+    /**
+     * @returns {number}
+     */
+    size() { return map.size; },
+  };
+}

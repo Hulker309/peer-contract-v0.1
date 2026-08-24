@@ -281,6 +281,170 @@ export function validateSessionExistence(targetSessionKey, sessionRegistry) {
 }
 
 /**
+ * Day 8 followup v2 (Mavis 2026-08-24, 老板 10:33 followup + 10:50 提示"结合 workboard"):
+ * HR10 task-dependency.
+ *
+ * Architectural decision: peer-contract-enforcer does NOT maintain its own
+ * task state — that's the workboard plugin's job. The v0.1 protocol layer is
+ * for message-shape enforcement, not workflow-state tracking. Workboard has:
+ *   - WorkboardCard.taskId / parentTaskId fields
+ *   - WORKBOARD_LINK_TYPES: ["parent", "child", "blocks", "blocked_by", "relates_to"]
+ *   - linkCards(parentId, childId) for explicit dependency edges
+ *   - dependencyTargetStatus + promoteReady private methods that enforce
+ *     "child card only ready after parent is in target status" at dispatch time
+ *   - `done` status = task completed
+ *
+ * So HR10 here is a **schema-only** check: parent_task_id MUST be a valid
+ * UUID (matching workboard card id format). The actual dependency-graph
+ * enforcement (waiting for parent in "done" status before child can be
+ * dispatched) is the workboard dispatch engine's responsibility, not ours.
+ *
+ * This keeps the plugin lean and avoids duplicating state that workboard
+ * already tracks authoritatively. Callers wire up the dependency edge via
+ * `workboard linkCards(parentId, childId)` after creating the child card.
+ *
+ * @param {string} [parentTaskId]
+ * @returns {ValidationError[]}
+ */
+export function validateTaskDependency(parentTaskId) {
+  // Only `undefined` means "no dependency declared" — no error.
+  // null, empty string, or other non-string values are user mistakes and BLOCK.
+  if (parentTaskId === undefined) return [];
+  /** @type {ValidationError[]} */
+  const errors = [];
+  if (typeof parentTaskId !== "string") {
+    errors.push({
+      hr: "HR10",
+      field: "parent_task_id",
+      message: `parent_task_id must be a string (workboard card id), got ${parentTaskId === null ? "null" : typeof parentTaskId}`,
+      reason: "parent_task_id_invalid_type",
+    });
+    return errors;
+  }
+  if (parentTaskId.length === 0) {
+    errors.push({
+      hr: "HR10",
+      field: "parent_task_id",
+      message: `parent_task_id is an empty string; omit the field entirely if there's no dependency, or pass a valid workboard card id (UUID)`,
+      reason: "parent_task_id_empty",
+    });
+    return errors;
+  }
+  // UUID v1-v5 (8-4-4-4-12 hex). Workboard card ids are UUIDs.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parentTaskId)) {
+    errors.push({
+      hr: "HR10",
+      field: "parent_task_id",
+      message: `parent_task_id '${parentTaskId}' is not a valid UUID; per Day 8 v2 design parent_task_id is a workboard card id (workboard enforces the actual dependency graph via linkCards + promoteReady). Use a workboard card id, e.g. '7f4a2c10-...'.`,
+      reason: "parent_task_id_not_uuid",
+    });
+  }
+  return errors;
+}
+
+/**
+ * Day 8 followup (Mavis 2026-08-24, 老板 10:33 followup): HR5.1 multi-target.
+ *
+ * When `target_session_keys` is an array (broadcast multi-target fan-out),
+ * each entry must satisfy the same bus-context-required rule as a single
+ * target_session_key (Day 8 HR5.1: bare `agent:<id>:bus` is BLOCKED).
+ *
+ * Why a separate validator rather than reusing validateBusContextRequired
+ * on each element: the field name is different (target_session_keys[i] vs
+ * target_session_key), and the error message naming differs to make multi-
+ * target validation failures easier to diagnose.
+ *
+ * @param {string[]} [targetSessionKeys]
+ * @param {{ busContextRequired?: boolean }} [opts]
+ * @returns {ValidationError[]}
+ */
+export function validateMultiTargetBusContext(targetSessionKeys, opts = {}) {
+  /** @type {ValidationError[]} */
+  const errors = [];
+  if (opts.busContextRequired === false) return [];
+  if (!Array.isArray(targetSessionKeys) || targetSessionKeys.length === 0) return [];
+
+  for (let i = 0; i < targetSessionKeys.length; i++) {
+    const k = targetSessionKeys[i];
+    if (typeof k !== "string") {
+      errors.push({
+        hr: "HR5",
+        field: `target_session_keys[${i}]`,
+        message: `target_session_keys[${i}] must be a string session key, got ${typeof k}`,
+        reason: "multi_target_session_keys_invalid",
+      });
+      continue;
+    }
+    const m = k.match(/^agent:[^:]+:bus(?::(.*))?$/);
+    if (!m) continue; // not a bus-shaped key, leave to other validators
+    const contextId = m[1];
+    if (!contextId || contextId.length === 0) {
+      errors.push({
+        hr: "HR5",
+        field: `target_session_keys[${i}]`,
+        message: `target_session_keys[${i}] = '${k}' is missing a context-id segment; per v0.1 spec (docs/bus-coordination.md) bus must be per-context (e.g. agent:<id>:bus:dashboard, agent:<id>:bus:webchat:<user-id>). Bare 'agent:<id>:bus' collapses to a shared inbox.`,
+        reason: "bus_context_required_multi",
+      });
+    }
+  }
+  return errors;
+}
+
+/**
+ * Day 8 followup (Mavis 2026-08-24, 老板 8/10 反馈): HR5.1 bus-context-required.
+ *
+ * When `busContextRequired: true` (default), any `target_session_key` that
+ * *looks like* a bus session key (matches `^agent:[^:]+:bus(?::(.*))?$`) MUST
+ * include a non-empty context-id segment. Bare `agent:<id>:bus` (no context)
+ * collapses to a single shared inbox and reintroduces the main-session-style
+ * cross-task contamination that bus was designed to avoid. See
+ * docs/bus-coordination.md "Bus session types":
+ *   agent:<agent-id>:bus:<context-id>
+ * Examples: agent:peer-trial:bus:dashboard, agent:peer-trial:bus:webchat:user-123,
+ *           agent:kelsen:bus:dispatch.
+ *
+ * The check is driven by the **session key shape**, not by `target_role`. This
+ * matters because v1.1 / legacy / CLI-via-agent dispatches may not populate
+ * `target_role` at all — relying on `target_role === "bus"` would silently
+ * miss those dispatches. The key shape is the authoritative source of truth.
+ *
+ * Sender-side bus keys (sender_session_key) are NOT enforced here: the sender
+ * bus is a known bus (e.g. main's own bus for status reports). This rule
+ * applies to the *target* bus, where the coordination must scope to a
+ * specific context.
+ *
+ * Operators may set `busContextRequired: false` to opt out (e.g. for a single
+ * inbox that genuinely needs to aggregate all peers). The opt-out is
+ * explicit, not silent.
+ *
+ * @param {string} [targetSessionKey]
+ * @param {string} [targetRole]  // retained for symmetry / future per-role rules; not used
+ * @param {{ busContextRequired?: boolean, busSessionKeyPattern?: RegExp }} [opts]
+ * @returns {ValidationError[]}
+ */
+export function validateBusContextRequired(targetSessionKey, targetRole, opts = {}) {
+  /** @type {ValidationError[]} */
+  const errors = [];
+  if (opts.busContextRequired === false) return errors; // explicit opt-out
+  if (!targetSessionKey) return errors;
+
+  // Parse the key shape: agent:<id>:bus:<rest...>
+  // Reject if the segment after "bus" is empty (i.e. exactly `agent:<id>:bus`).
+  const m = targetSessionKey.match(/^agent:[^:]+:bus(?::(.*))?$/);
+  if (!m) return errors; // not a bus key, leave to other validators
+  const contextId = m[1];
+  if (!contextId || contextId.length === 0) {
+    errors.push({
+      hr: "HR5",
+      field: "target_session_key",
+      message: `bus session key '${targetSessionKey}' is missing a context-id segment; per v0.1 spec (docs/bus-coordination.md) bus must be per-context (e.g. agent:<id>:bus:dashboard, agent:<id>:bus:webchat:<user-id>). Bare 'agent:<id>:bus' collapses to a shared inbox.`,
+      reason: "bus_context_required",
+    });
+  }
+  return errors;
+}
+
+/**
  * Cross-check payload.sender_session_key against ctx.sessionKey (when both present).
  * @param {string | undefined} payloadSender
  * @param {string | undefined} ctxSender
@@ -356,6 +520,35 @@ export function validateDispatchSchema(params, ctx, deps) {
     mainIntentsAllowlist: deps.mainIntentsAllowlist,
     crossAgentToWorkBlocked: deps.crossAgentToWorkBlocked,
     workSessionKeyPattern: deps.workSessionKeyPattern,
+  })) errors.push(e);
+
+  // Step 5.1: Day 8 followup (Mavis 2026-08-24, 老板 8/10 反馈): HR5.1 bus-context-required.
+  // Bus targets must include a context-id segment. Default ON; opt-out via busContextRequired=false.
+  const targetRole = typeof payload?.target_role === "string" ? payload.target_role : undefined;
+  for (const e of validateBusContextRequired(targetSessionKey, targetRole, {
+    busContextRequired: deps.busContextRequired,
+    busSessionKeyPattern: deps.busSessionKeyPattern,
+  })) errors.push(e);
+
+  // Step 5.2: Day 8 followup v2 (Mavis 2026-08-24, 老板 10:50 提示"结合 workboard"):
+  // HR10 task-dependency (schema-only — workboard is source-of-truth for state).
+  // parent_task_id can appear at routing level or inside bus.task_assignment.
+  const parentTaskId = typeof payload?.parent_task_id === "string"
+    ? payload.parent_task_id
+    : (typeof payload?.bus?.task_assignment?.parent_task_id === "string"
+       ? payload.bus.task_assignment.parent_task_id
+       : undefined);
+  for (const e of validateTaskDependency(parentTaskId)) errors.push(e);
+
+  // Step 5.3: Day 8 followup (Mavis 2026-08-24, 老板 10:33 followup): HR5.1 multi-target.
+  // target_session_keys is an array (broadcast multi-target). Each bus key
+  // must satisfy bus-context-required. Mutually exclusive with target_session_key
+  // (the spec layer enforces mutual exclusion; here we just validate each entry).
+  const targetSessionKeys = Array.isArray(payload?.target_session_keys)
+    ? payload.target_session_keys
+    : undefined;
+  for (const e of validateMultiTargetBusContext(targetSessionKeys, {
+    busContextRequired: deps.busContextRequired,
   })) errors.push(e);
 
   // Step 6: HR6 schema (only if v2 payload detected)

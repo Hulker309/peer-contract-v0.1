@@ -13,6 +13,65 @@
 | 5 | No reply routing enforcement | reply_to field required (v1.1 contract), but plugin doesn't enforce chain | Drift 2 catches missing; valid reply_to is not chain-validated | Open, future work |
 | 6 | No bus topology validation | plugin allows any bus↔bus regardless of declared topology | rely on bus session key conventions | Open, future work |
 
+## Day 8 update (2026-08-24) — HR5.1 bus-context-required
+
+**Status change**: #6 "No bus topology validation" remains open (full topology graph is still v0.2), but a **partial enforcement** landed: HR5.1 now requires `agent:<id>:bus:<context-id>` to include a non-empty `context-id` segment. Bare `agent:<id>:bus` (the Kelsen 8/24 4-agent bootstrap default) is now BLOCKED.
+
+**Why this was added**: 老板 2026-08-24 08:10 feedback pointed out that bare bus keys collapse to a single shared inbox, which is the same cross-task contamination that the v0.1 bus coordination design was built to avoid (see `docs/bus-coordination.md` "Bus is NOT a simple message queue"). The plugin up to Day 7 accepted any bus shape because `busSessionKeyPattern` defaulted to `^agent:[^:]+:bus(:.*)?$` (zero-or-more trailing segments). HR5.1 closes the "zero segments" hole.
+
+**What HR5.1 does**:
+- In `validateDispatchSchema` Step 5.1, when `target_role === "bus"`, the `target_session_key` must match `^agent:[^:]+:bus:.+$` (at least one non-empty segment after `:bus:`).
+- Opt-out: set `busContextRequired: false` in plugin config (explicit, not silent).
+- Sender-side bus keys (e.g. main's own bus) are NOT enforced — only target-side.
+
+**Side effects**:
+- All existing tests pass (166/166) — the test suite already used per-context bus keys everywhere.
+- **Callers using bare `agent:<id>:bus` (Kelsen 8/24 4-agent bootstrap, 4 new agents) will be BLOCKED** until they update their dispatch to use per-context bus keys. This is the intended behavior; the v0.1 spec design has always been per-context.
+- `spec/04-bus.schema.json` should be updated in a follow-up to formally require `context-id` (Day 8 added the enforcement but not the schema-level requirement — open).
+
+**Operator migration**: when upgrading, search your dispatch sites for the bare `:bus"` suffix and add a context segment. Common patterns:
+- `agent:<id>:bus:dashboard` (single dashboard per agent)
+- `agent:<id>:bus:webchat:<user-id>` (per-user channel)
+- `agent:<id>:bus:dispatch` (dispatch hub, per task)
+- `agent:<id>:bus:webchat:<user-id>:<task-id>` (per-user-per-task, multi-segment)
+
+**Related spec section**: see `docs/bus-coordination.md` §"Bus session types" for the canonical key shape.
+
+## Day 8 v2 update (2026-08-24, 老板 10:50 提示"结合 workboard") — task dependency + multi-target broadcast
+
+**Status change**:
+- **#3 (AC chain validation)**: now **delegated to workboard**. peer-contract-enforcer HR10 only validates `parent_task_id` schema (UUID format = workboard card id). Actual dependency-graph enforcement is the workboard plugin's `linkCards` + `promoteReady` private methods. The plugin no longer maintains its own task-registry (Day 8 v1 intermediate design was rejected at 10:50; ship is the leaner v2).
+- **#4 (work session message tool)**: unchanged. Work sessions still can't `message` external channels (HR9 deny list).
+- **#5 (reply routing enforcement)**: unchanged. `in_reply_to` chain not validated.
+- **#6 (bus topology)**: unchanged. Bus dispatch fan-out is `target_session_keys` array schema (HR5.1 multi), but actual delivery is caller's responsibility (plugin validates array, caller fires N `sessions_send` calls).
+
+**Day 8 v2 design rationale** (老板 10:50): "结合 openclaw 自己的 workboard 功能" — workboard is already task lifecycle source-of-truth. Building a parallel task-registry in peer-contract-enforcer would be redundant state that drifts from the canonical source. Plugin's scope is "agent↔agent message protocol", not "workflow engine".
+
+**New wire-format fields** (spec/01-dispatch + 04-bus):
+- `routing.parent_task_id`: optional UUID, workboard card id of upstream dependency
+- `routing.target_session_keys`: optional array, multi-target fan-out (mutually exclusive with `target_session_key`)
+- `bus.broadcast.scope` enum: added `explicit_target_session_keys` value
+- `bus.broadcast.multi_target_session_keys`: optional array, explicit target list
+
+**Plugin enforcement**:
+- HR10 schema-only (UUID format check). Helpful BLOCK message points to workboard card id format.
+- HR5.1 multi-target: each array entry must satisfy bus-context-required rule.
+
+**Plugin deletions** (vs Day 8 v1):
+- `src/task-registry.js` — removed (workboard is source-of-truth)
+- yield_report / task_assignment state-update hooks in `tool-guard.js` — removed
+- `createTaskRegistry` injection in `index.js` — removed
+
+**Tests**: 23 new + 166 prior = 189 total, all PASS.
+
+**Migration for operators** (in 4 agent AGENTS.md §6 "workboard 集成"):
+- Use `workboard.createCard(...)` to make a card; capture the returned `card.id`
+- Use `workboard.linkCards(parentCardId, childCardId)` to wire up dependencies
+- Use `workboard.complete(cardId, { summary, artifacts })` to mark done
+- Use `workboard.block(cardId, { reason })` to mark failed/blocked
+- In `sessions_send` envelope, set `bus.task_assignment.parent_task_id` to the workboard card id
+- For multi-target broadcast, use `target_session_keys` array (or N separate `sessions_send` calls)
+
 ## 1. v1.1 ↔ v0.1 compat shim
 
 **Decision (2026-08-22 06:14, user拍)**: do not ship a compat shim. v0.1 is the wire format. Coder must migrate to v0.1 dispatch format.

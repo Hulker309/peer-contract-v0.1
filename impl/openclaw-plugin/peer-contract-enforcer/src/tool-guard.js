@@ -86,6 +86,12 @@ export function createToolGuard(policy, roleRegistry, sessionRegistry, acCache, 
           mainIntentsAllowlist: policy.mainIntentsAllowlist,
           crossAgentToWorkBlocked: policy.crossAgentToWorkBlocked,
           workSessionKeyPattern: policy.workSessionKeyPattern,
+          // Day 8 followup (Mavis 2026-08-24, 老板 8/10 反馈): HR5.1 bus-context-required.
+          busContextRequired: policy.busContextRequired,
+          busSessionKeyPattern: policy.busSessionKeyPattern,
+          // Day 8 v2 (Mavis 2026-08-24, 老板 10:50 提示"结合 workboard"): HR10
+          // task-dependency is schema-only (workboard is source-of-truth for
+          // task state). taskRegistry is no longer needed at the dispatch layer.
         });
         if (!r.ok) {
           return {
@@ -202,6 +208,14 @@ export function createToolGuard(policy, roleRegistry, sessionRegistry, acCache, 
             };
           }
         }
+
+        // Day 8 v2 (老板 10:50 "结合 workboard"): task state tracking REMOVED.
+        // Workboard plugin is the source of truth for task lifecycle. When a
+        // work session completes, it should call workboard's `complete(id)` /
+        // `block(id, reason)` API directly (not infer from yield_report). See
+        // workboard docs/cli/workboard.md and the 4 agent AGENTS.md templates
+        // for the call pattern.
+
         return undefined; // allow
       }
 
